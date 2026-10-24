@@ -96,14 +96,18 @@ QQX_AIBot 把这些打包成一套可运行的整体：**协议端保活 + 多�
 
 | 参考项目 | 作者 | 借鉴的设计 |
 | --- | --- | --- |
-| [LittleWhiteBox](https://github.com/RT15548/LittleWhiteBox) | biex | 长期记忆的分层思路（逐楼锚点 / 结构化事件 / 多路混合召回），Apache-2.0 |
+| [LittleWhiteBox](https://github.com/RT15548/LittleWhiteBox) | biex | 长期记忆的分层思路（逐楼锚点 / 结构化事件 / 多路混合召回）；Apache-2.0（许可证在仓库 `docs/LICENSE.md`，另附一条署名要求） |
 | [astrbot_plugin_stealer](https://github.com/nagatoquin33/astrbot_plugin_stealer) | nagatoquin33 | 表情包偷取流程设计 |
 | [astrbot_plugin_debounce](https://github.com/advent259141/astrbot_plugin_debounce) | advent259141 | 消息防抖判定思路 |
 | [astrbot_dg_lab_plugin](https://github.com/RC-CHN/astrbot_dg_lab_plugin) | RC-CHN | 郊狼（DG-LAB）连接功能设计 |
 
 `debounce_model/` 所用的连发判断模型来自 ModelScope `advent259141/astrbot_debouncer_small`（Apache-2.0），版权归原作者。
 
+上述许可证均已按各项目仓库内的许可证文件核对（核对日期 2026-10-25）；如与上游有出入，以上游仓库为准。
+
 Based on LittleWhiteBox by biex
+
+> 上面这行不是客套话：LittleWhiteBox 的 `docs/LICENSE.md` 在 Apache-2.0 之外另附了一条署名要求——引用、修改或分发其项目文件时，必须在文档、README 或致谢里按这个格式标出原作者 biex。
 
 ## 免责声明
 

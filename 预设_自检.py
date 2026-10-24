@@ -947,7 +947,8 @@ ck("界面有导出按钮", "presetExport('jb')" in H and "presetExportAll('jb')
    and "presetExport('style')" in H)
 ck("导入导出函数有定义", "async function presetImport(" in H and "function presetExport(" in H
    and "function presetExportAll(" in H)
-ck("正文工具名改为只读展示", 'id="presetTool" readonly' in H and "正文工具名（随预设 JSON 导入，不用手填）" in H)
+ck("正文工具名可自己填（和提示词里的名字对齐）", 'id="presetTool" readonly' not in H
+   and "正文工具名（自己填，和提示词里要求的工具名保持一致）" in H)
 ck("导出字段含三个工具名", "'tool_name', 'tool_desc', 'tool_arg_desc'" in H)
 
 _r = asyncio.run(ns["presets_post"]({"action": "import", "data": [{"name": "导入A", "tool_name": "jb_a",

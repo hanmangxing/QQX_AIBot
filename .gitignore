@@ -1,0 +1,35 @@
+# ================= 密钥与本地配置（绝不入库）=================
+# config.json 里有你的 API key / QQ 账号密码 / access_token，只在本地存在；
+# 程序首次运行会自己生成它（默认值写在 app.py 的 DEFAULT_CONFIG 里）。
+config.json
+.env
+.env.*
+
+# ================= 运行时数据 / 隐私数据 =================
+# 聊天记录、记忆、图片、贴纸库都在这儿，属于你自己的数据，别进仓库
+history.json
+history_archive.json
+memory.json
+memory_vectors.json
+mood.json
+notebook.json
+world_book.json
+active_msg.json
+idle.json
+lwb_aliases.json
+qq_images/
+sticker_data/
+claude_data/
+comfyui_output/
+comfyui_workflows/默认-anima文生图.json
+
+# ================= 日志 / 缓存 =================
+*.log
+__pycache__/
+*.py[cod]
+_chk_preset.js
+
+# ================= 本地交付包 / 临时文件 =================
+_deliver/
+*.bak
+*.tmp

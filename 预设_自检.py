@@ -24,18 +24,20 @@ ck("内置两套预设", len(bs) == 2, len(bs))
 cat, whale = bs[0], bs[1]
 ck("小猫之神 id/工具", cat["id"] == "cat_god" and cat["tool_name"] == "game_content")
 ck("小鲸之神 id/工具", whale["id"] == "whale_god" and whale["tool_name"] == "whale_content")
-ck("小猫之神文案里有 game_content", "game_content" in cat["body"] or "game_content" in cat["bypass"])
-ck("小鲸之神文案换成 whale_content", "whale_content" in (whale["body"] + whale["bypass"]))
+ck("仓库不自带预设正文（body/bypass/recency 全空）",
+   not (cat["body"] or cat["bypass"] or cat["recency"]) and not (whale["body"] or whale["bypass"] or whale["recency"]),
+   (len(cat["body"]), len(whale["body"])))
+ck("小鲸之神工具名换成 whale_content", whale["tool_name"] == "whale_content" and "game_content" not in whale["tool_name"])
 ck("小鲸之神无残留猫/喵", ("猫" not in whale["body"] + whale["bypass"] + whale["recency"] + whale["tfe"]),
    repr([c for c in "猫喵" if c in whale["body"] + whale["bypass"] + whale["recency"] + whale["tfe"]]))
-ck("小鲸之神出现小鲸之神字样", "小鲸之神" in whale["body"] or "小鲸之神" in whale["tfe"])
+ck("小鲸之神名字还在（正文留给使用者导入）", "小鲸之神" in str(whale.get("name") or ""))
 
 ck("小鲸之神无 SoliUmbra", "SoliUmbra" not in (whale["tfe"] + whale["body"] + whale["bypass"] + whale["recency"] + whale["desc"]))
-ck("小鲸之神模型卡叫 Balaena", "Balaena" in whale["tfe"] and "Balaena" in whale["body"])
-ck("小猫之神仍保留 SoliUmbra", "SoliUmbra" in cat["tfe"] and "SoliUmbra" in cat["body"])
+ck("仓库不带模型卡名 Balaena", "Balaena" not in (whale["tfe"] + whale["body"] + whale["bypass"] + whale["recency"]))
+ck("仓库不带 SoliUmbra", "SoliUmbra" not in (cat["tfe"] + cat["body"] + cat["bypass"] + cat["recency"]))
 
-ck("小鲸之神思维链标签换成 think_wu~", ("think_wu~" in whale["body"]) and ("think_nya~" not in whale["body"]))
-ck("小猫之神仍是 think_nya~", "think_nya~" in cat["body"])
+ck("仓库不带内置思维链标签（wu）", "think_wu~" not in whale["body"])
+ck("仓库不带内置思维链标签（nya）", "think_nya~" not in cat["body"])
 _r1 = bot.sanitize_reply("<think_wu~>想了很久</think_wu~>正文一")
 ck("小鲸之神标签能剥掉、正文保留", _r1 == "正文一", repr(_r1))
 _r2 = bot.sanitize_reply("<content><think_nya~>喵</think_nya~>正文二</content>")
@@ -44,7 +46,7 @@ _r3 = bot.sanitize_reply("<think_wu~>漏了闭合 正文三")
 ck("漏闭合也不会把思维链漏给用户", _r3 == "", repr(_r3))
 _r4 = bot.sanitize_reply("<think>普通思维链</think>正文四")
 ck("老 <think> 标签照旧能剥", _r4 == "正文四", repr(_r4))
-ck("两套主体都不为空", len(cat["body"]) > 500 and len(whale["body"]) > 500, (len(cat["body"]), len(whale["body"])))
+ck("两套主体为空（正文靠导入）", cat["body"] == "" and whale["body"] == "", (len(cat["body"]), len(whale["body"])))
 ck("两套工具说明不空", bool(cat["tool_desc"]) and bool(cat["tool_arg_desc"]))
 
 # ---------- 2. 当前预设的取值 ----------
@@ -52,8 +54,12 @@ cfg_cat = {"llm_presets": bs, "llm_preset_id": "cat_god"}
 cfg_whale = {"llm_presets": bs, "llm_preset_id": "whale_god"}
 ck("按 id 取到小猫之神", bot._preset_name(cfg_cat) == "小猫之神")
 ck("按 id 取到小鲸之神", bot._preset_name(cfg_whale) == "小鲸之神")
-ck("body 跟着切", bot._preset_field(cfg_cat, "body") != bot._preset_field(cfg_whale, "body"))
-ck("recency 跟着切", bot._preset_field(cfg_cat, "recency") != bot._preset_field(cfg_whale, "recency"))
+_cfa = {"llm_presets": [{"id": "a", "name": "A", "body": "AAA", "recency": "RA", "tfe": "TA"},
+                        {"id": "b", "name": "B", "body": "BBB", "recency": "RB", "tfe": "TB"}], "llm_preset_id": "a"}
+ck("导入的 body 跟着预设切", bot._preset_field(_cfa, "body") == "AAA"
+   and bot._preset_field({**_cfa, "llm_preset_id": "b"}, "body") == "BBB")
+ck("导入的 recency/tfe 跟着预设切", bot._preset_field(_cfa, "recency") == "RA"
+   and bot._preset_field({**_cfa, "llm_preset_id": "b"}, "tfe") == "TB")
 t1 = bot._preset_tool(cfg_cat)["function"]
 t2 = bot._preset_tool(cfg_whale)["function"]
 ck("工具定义跟随预设", t1["name"] == "game_content" and t2["name"] == "whale_content", (t1["name"], t2["name"]))
@@ -71,9 +77,10 @@ ck("自定义没填 tfe 时回落内置", bot._preset_field(cfg_custom, "tfe") =
 body_cat = bot.assemble_darkside_system_prompt(preset_body=cat["body"])
 ck("assemble 用预设 body", cat["body"] in body_cat and len(body_cat) >= len(cat["body"]))
 body_w = bot.assemble_darkside_system_prompt(preset_body=whale["body"])
-ck("assemble 换预设后内容变了", body_cat != body_w)
+ck("assemble 换预设后内容变了",
+   bot.assemble_darkside_system_prompt(preset_body="AAA") != bot.assemble_darkside_system_prompt(preset_body="BBB"))
 body_d = bot.assemble_darkside_system_prompt()
-ck("不传 body 时回落内置四段", len(body_d) > 500)
+ck("不传 body 时不带出任何内置文案", len(body_d.strip()) == 0, len(body_d))
 
 # ---------- 3. bot.py 接线（源码级） ----------
 B = io.open("bot.py", encoding="utf-8").read()
@@ -123,8 +130,7 @@ ck("复制出新预设", r["status"] == "ok" and len(r["presets"]) == 3 and nid)
 dup = [p for p in r["presets"] if p["id"] == nid][0]
 ck("副本工具名不撞车", dup["tool_name"] == "whale_content_2", dup["tool_name"])
 _all = "".join(str(dup.get(k) or "") for k in ("body", "bypass", "recency", "tfe"))
-ck("副本文案里工具名同步换", "whale_content_2" in _all and not re.search(r"whale_content(?!_2)", _all),
-   re.findall(r"whale_content\w*", _all)[:6])
+ck("仓库不带文案时副本无可替换（导入用例见第 19 节）", _all.strip() == "", repr(_all[:20]))
 r = asyncio.run(ns["presets_post"]({"action": "save", "preset": {"id": nid, "name": "我的破限", "tool_name": "my_jb"}}))
 ck("保存改名", r["status"] == "ok" and [p for p in r["presets"] if p["id"] == nid][0]["name"] == "我的破限")
 ck("保存不动其他字段", [p for p in r["presets"] if p["id"] == nid][0]["body"] == dup["body"])
@@ -640,8 +646,8 @@ ck("NapCat 已在运行时前端会提示并回放输出",
    and "napcatReplayConsole();" in H)
 ck("启动中标记带超时与 finally 兜底，不会永久卡住",
    "_napcat_starting_at" in _APP and "time.time() - _napcat_starting_at" in _APP)
-ck("左上角图标已改为 QQbot星",
-   'QQbot<span class="text-emerald-400 logo-cn">星</span>' in H
+ck("左上角图标已改为 QQ星",
+   'QQ<span class="text-emerald-400 logo-cn">星</span>' in H
    and 'QQbot<span class="text-emerald-400">X</span>' not in H)
 ck("右上角设置齿轮已就位（正方形、不参与页签样式切换）",
    'id="tabBtnSettings"' in H and "if (k === 'settings')" in H)
@@ -927,6 +933,39 @@ ck("页面加载先回填秘书配置", "秘书网关配置先回填一遍" in H
 
 io.open("_chk_preset.js", "w", encoding="utf-8").write(js)
 ck("JS 片段已导出", len(js) > 5000, len(js))
+# ---------- 19. 仓库不带预设正文 + JSON 导入导出 ----------
+for _n in ("TFE_SYSTEM_PROMPT", "DARKSIDE_ENHANCE_INJECT", "DARKSIDE_WORLD", "DARKSIDE_BRIDGE",
+           "DARKSIDE_DIVIDER", "DARKSIDE_BYPASS", "JAILBREAK_RECENCY"):
+    ck("仓库常量留空 %s" % _n, re.search(r'^%s = ""$' % _n, B, re.M) is not None)
+ck("取值仍走「预设优先、常量兜底」", '_preset_field(self.config, "tfe") or TFE_SYSTEM_PROMPT' in B
+   and '_preset_field(self.config, "bypass") or DARKSIDE_BYPASS' in B
+   and '_preset_field(self.config, "recency") or JAILBREAK_RECENCY' in B)
+ck("工具名仍是预设优先、全局兜底", '_preset_field(cfg, "tool_name")' in B)
+ck("POST 支持 import", 'if act == "import":' in A)
+ck("界面有导入按钮", "presetImport('jb')" in H and "presetImport('style')" in H)
+ck("界面有导出按钮", "presetExport('jb')" in H and "presetExportAll('jb')" in H
+   and "presetExport('style')" in H)
+ck("导入导出函数有定义", "async function presetImport(" in H and "function presetExport(" in H
+   and "function presetExportAll(" in H)
+ck("正文工具名改为只读展示", 'id="presetTool" readonly' in H and "正文工具名（随预设 JSON 导入，不用手填）" in H)
+ck("导出字段含三个工具名", "'tool_name', 'tool_desc', 'tool_arg_desc'" in H)
+
+_r = asyncio.run(ns["presets_post"]({"action": "import", "data": [{"name": "导入A", "tool_name": "jb_a",
+       "body": "用 jb_a 交正文", "bypass": "防截断也叫 jb_a", "tool_desc": "d", "tool_arg_desc": "a"}]}))
+_ip = [x for x in _r["presets"] if x["id"] == _r["id"]][0]
+ck("导入可用且 id 新分配", _r["status"] == "ok" and _ip["id"].startswith("p_") and _ip["id"] != "cat_god", _ip["id"])
+ck("导入保留工具名与正文", _ip["tool_name"] == "jb_a" and _ip["body"] == "用 jb_a 交正文", _ip.get("tool_name"))
+ck("导入的正文进注入链路", bot._preset_field({"llm_presets": [_ip], "llm_preset_id": _ip["id"]}, "body") == "用 jb_a 交正文")
+ck("导入的工具名进注入链路", bot._preset_tool({"llm_presets": [_ip], "llm_preset_id": _ip["id"]})["function"]["name"] == "jb_a")
+_r2 = asyncio.run(ns["presets_post"]({"action": "import", "data": [{"name": "导入B"}, {"name": "导入C"}]}))
+ck("导入支持列表", _r2["status"] == "ok" and _r2["added"] == 2, _r2.get("added"))
+ck("导入空内容报错", asyncio.run(ns["presets_post"]({"action": "import", "data": []}))["status"] == "error")
+_r3 = asyncio.run(ns["presets_post"]({"action": "duplicate", "id": _ip["id"]}))
+_d2 = [x for x in _r3["presets"] if x["id"] == _r3["id"]][0]
+ck("副本工具名不撞车（导入的）", _d2["tool_name"] == "jb_a_2", _d2["tool_name"])
+ck("副本文案里工具名同步换（导入的）", "jb_a_2" in _d2["body"] and "jb_a" not in _d2["body"].replace("jb_a_2", ""), _d2["body"])
+
+
 print("\n%s  PASS %d / FAIL %d" % ("[预设自检]", P, F))
 sys.exit(1 if F else 0)
 

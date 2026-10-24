@@ -3058,7 +3058,10 @@
             <button onclick="presetNew()" class="px-2.5 py-1 rounded text-[11px] bg-[#1f2430] text-gray-300 hover:bg-[#2a3040]">复制一份</button>
             <button onclick="presetDel()" class="px-2.5 py-1 rounded text-[11px] bg-[#2a1620] text-red-400 hover:bg-[#3a1c28]">删除</button>
           </div>
-          <div id="presetList"></div>
+          <button onclick="presetImport('jb')" class="px-2.5 py-1 rounded text-[11px] bg-[#1f2430] text-gray-300 hover:bg-[#2a3040]" title="从 JSON 文件导入预设（正文随文件进来，仓库不预置）">导入 JSON</button>
+<button onclick="presetExport('jb')" class="px-2.5 py-1 rounded text-[11px] bg-[#1f2430] text-gray-300 hover:bg-[#2a3040]">导出当前</button>
+<button onclick="presetExportAll('jb')" class="px-2.5 py-1 rounded text-[11px] bg-[#1f2430] text-gray-300 hover:bg-[#2a3040]">导出全部</button>
+<div id="presetList"></div>
         </div>
         <div class="rounded-lg border border-[#2a2f3a] bg-[#0d1117] p-3">
           <div class="flex items-center justify-between gap-2 mb-2">
@@ -3069,7 +3072,10 @@
             <button onclick="styleNew()" class="px-2.5 py-1 rounded text-[11px] bg-[#1f2430] text-gray-300 hover:bg-[#2a3040]">复制一份</button>
             <button onclick="styleDel()" class="px-2.5 py-1 rounded text-[11px] bg-[#2a1620] text-red-400 hover:bg-[#3a1c28]">删除</button>
           </div>
-          <div id="styleList"></div>
+          <button onclick="presetImport('style')" class="px-2.5 py-1 rounded text-[11px] bg-[#1f2430] text-gray-300 hover:bg-[#2a3040]" title="从 JSON 文件导入文风预设">导入 JSON</button>
+<button onclick="presetExport('style')" class="px-2.5 py-1 rounded text-[11px] bg-[#1f2430] text-gray-300 hover:bg-[#2a3040]">导出当前</button>
+<button onclick="presetExportAll('style')" class="px-2.5 py-1 rounded text-[11px] bg-[#1f2430] text-gray-300 hover:bg-[#2a3040]">导出全部</button>
+<div id="styleList"></div>
           <div id="styleState" class="text-[10px] text-gray-500 mt-2 leading-4"></div>
         </div>
       </div>
@@ -3081,7 +3087,7 @@
             <div class="col-span-12 md:col-span-7"><div class="text-[11px] text-gray-500 mb-1">说明（给自己看的）</div><input id="presetDesc" class="w-full bg-[#0d1117] border border-[#2a2f3a] rounded px-2 py-1.5 text-[12px] text-gray-200 outline-none focus:border-purple-600"></div>
           </div>
           <div class="grid grid-cols-12 gap-3 mt-3">
-            <div class="col-span-12 md:col-span-4"><div class="text-[11px] text-gray-500 mb-1">正文工具名（模型必须调这个工具交正文）</div><input id="presetTool" class="w-full bg-[#0d1117] border border-[#2a2f3a] rounded px-2 py-1.5 text-[12px] text-gray-200 outline-none focus:border-purple-600"></div>
+            <div class="col-span-12 md:col-span-4"><div class="text-[11px] text-gray-500 mb-1">正文工具名（随预设 JSON 导入，不用手填）</div><input id="presetTool" readonly class="w-full bg-[#0d1117] border border-[#2a2f3a] rounded px-2 py-1.5 text-[12px] text-gray-200 outline-none focus:border-purple-600"></div>
             <div class="col-span-12 md:col-span-4"><div class="text-[11px] text-gray-500 mb-1">工具说明</div><input id="presetToolDesc" class="w-full bg-[#0d1117] border border-[#2a2f3a] rounded px-2 py-1.5 text-[12px] text-gray-200 outline-none focus:border-purple-600"></div>
             <div class="col-span-12 md:col-span-4"><div class="text-[11px] text-gray-500 mb-1">工具参数说明</div><input id="presetToolArg" class="w-full bg-[#0d1117] border border-[#2a2f3a] rounded px-2 py-1.5 text-[12px] text-gray-200 outline-none focus:border-purple-600"></div>
           </div>
@@ -10879,6 +10885,92 @@ setInterval(cyPoll, 5000);
       const inp = document.getElementById('claudeModel');
       if (inp) { inp.value = v; inp.dispatchEvent(new Event('input', { bubbles: true })); }
     }
+
+/* ===== 预设 JSON 导入 / 导出：仓库不带任何预设正文，正文由使用者自行导入 ===== */
+function presetFieldsOf(kind) {
+  return kind === 'style'
+    ? ['name', 'desc', 'text']
+    : ['name', 'desc', 'tfe', 'body', 'bypass', 'recency', 'tool_name', 'tool_desc', 'tool_arg_desc'];
+}
+function presetListOf(kind) { return (kind === 'style') ? (STYLE_LIST || []) : (PRESET_LIST || []); }
+function presetCurOf(kind) { return (kind === 'style') ? (STYLE_CUR || '') : (PRESET_CUR || ''); }
+function presetSay(kind, t, ok) {
+  if (kind === 'style' && typeof styleMsg === 'function') return styleMsg(t, ok);
+  return presetMsg(t, ok);
+}
+function presetDownload(obj, filename) {
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' }));
+  a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+}
+function presetPack(kind, p) {
+  var out = {}, fs = presetFieldsOf(kind);
+  for (var i = 0; i < fs.length; i++) { out[fs[i]] = (p[fs[i]] === undefined ? '' : p[fs[i]]); }
+  return out;
+}
+function presetExport(kind) {
+  var list = presetListOf(kind), cur = presetCurOf(kind), p = null, i;
+  for (i = 0; i < list.length; i++) { if (list[i].id === cur) { p = list[i]; break; } }
+  if (!p) { p = list[0]; }
+  if (!p) { return presetSay(kind, '没有可导出的预设', false); }
+  var out = presetPack(kind, p);
+  out._format = 'QQX_AIBot preset v1';
+  presetDownload(out, (kind === 'style' ? 'style_' : 'preset_') + (p.name || p.id || 'preset') + '.json');
+  presetSay(kind, '已导出当前预设 JSON');
+}
+function presetExportAll(kind) {
+  var list = presetListOf(kind), items = [], i;
+  if (!list.length) { return presetSay(kind, '没有可导出的预设', false); }
+  for (i = 0; i < list.length; i++) { items.push(presetPack(kind, list[i])); }
+  presetDownload({ _format: 'QQX_AIBot preset v1', kind: kind, presets: items },
+    (kind === 'style' ? 'styles' : 'presets') + '_all.json');
+  presetSay(kind, '已导出 ' + items.length + ' 套预设');
+}
+function presetPickItems(obj) {
+  if (Array.isArray(obj)) { return obj; }
+  if (obj && Array.isArray(obj.presets)) { return obj.presets; }
+  if (obj && obj.preset && typeof obj.preset === 'object') { return [obj.preset]; }
+  if (obj && typeof obj === 'object') { return [obj]; }
+  return [];
+}
+async function presetImport(kind) {
+  var inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.json,application/json';
+  inp.onchange = async function () {
+    var f = inp.files && inp.files[0];
+    if (!f) { return; }
+    var obj = null;
+    try { obj = JSON.parse(await f.text()); }
+    catch (e) { return presetSay(kind, 'JSON 解析失败：' + e.message, false); }
+    var items = presetPickItems(obj);
+    if (!items.length) { return presetSay(kind, '这个 JSON 里没有预设内容', false); }
+    var d = null;
+    try {
+      var r = await fetch('/api/presets', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scope: (typeof PRESET_SCOPE !== 'undefined' ? PRESET_SCOPE : 'main'),
+          kind: kind, action: 'import', data: items
+        })
+      });
+      d = await r.json();
+    } catch (e) { return presetSay(kind, '导入请求失败：' + e.message, false); }
+    if (!d || d.status !== 'ok') { return presetSay(kind, (d && d.msg) || '导入失败', false); }
+    if (kind === 'style') {
+      STYLE_LIST = d.presets || [];
+      if (typeof styleRenderList === 'function') { styleRenderList(); }
+      if (typeof styleEdit === 'function' && d.id) { styleEdit(d.id); }
+    } else {
+      PRESET_LIST = d.presets || [];
+      if (typeof presetRenderList === 'function') { presetRenderList(); }
+      if (typeof presetEdit === 'function' && d.id) { presetEdit(d.id); }
+    }
+    presetSay(kind, '已导入 ' + (d.added || items.length) + ' 套，选中后点「设为当前」生效');
+  };
+  inp.click();
+}
 </script>
 </body>
 </html>

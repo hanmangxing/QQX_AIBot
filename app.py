@@ -3919,6 +3919,38 @@ async def _presets_post_impl(payload: Dict[str, Any] = None):
         _preset_flush()
         return {"status": "ok", "presets": current_config[key_list], "id": newp["id"],
                 "style_enabled": list(current_config.get("style_enabled") or [])}
+    if act == "import":
+        # 导入：接受单个预设对象 / 列表 / {presets:[...]}。正文原样收下（仓库不预置任何预设文本），
+        # id 一律重新分配避免撞车，其余字段按上面 fields 白名单收。
+        raw = payload.get("data")
+        if raw is None:
+            raw = payload.get("preset") or payload.get("presets")
+        items = raw if isinstance(raw, list) else [raw]
+        used = {str(p.get("id")) for p in ps if isinstance(p, dict)}
+        added = []
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            newp = {"id": ("s_%d" if kind == "style" else "p_%d") % (int(time.time() * 1000) + len(added)),
+                    "builtin": False}
+            for f in fields:
+                v = it.get(f)
+                if v is not None:
+                    newp[f] = str(v)
+            if not str(newp.get("name") or "").strip():
+                newp["name"] = "导入的预设"
+            base_id, n = newp["id"], 1
+            while newp["id"] in used:
+                n += 1
+                newp["id"] = "%s_%d" % (base_id, n)
+            used.add(newp["id"])
+            added.append(newp)
+        if not added:
+            return {"status": "error", "msg": "没有可导入的预设"}
+        current_config[key_list] = ps + added
+        _preset_flush()
+        return {"status": "ok", "presets": current_config[key_list], "id": added[-1]["id"],
+                "added": len(added)}
     if act in ("duplicate", "new"):
         src = _preset_by_id(ps, str(payload.get("id") or ""))
         if src is None:

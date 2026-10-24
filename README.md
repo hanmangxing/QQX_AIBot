@@ -46,6 +46,9 @@ QQX_AIBot 把这些打包成一套可运行的整体：**协议端保活 + 多�
 - 生图：接 ComfyUI 工作流，支持节点映射与冷却
 - 表情包视觉理解与自动标注
 
+### 设备联动
+- 郊狼（DG-LAB）设备连接（需自备设备，用法自行配置）
+
 ### 内容边界
 - 回复拦截处理：识别空回复 / 被拦截的回复并重试、兜底
 - 群聊秘书网关：判断「现在该不该插话」（关键词、情绪阈值、重复消息检测）
@@ -87,12 +90,26 @@ QQX_AIBot 把这些打包成一套可运行的整体：**协议端保活 + 多�
 
 聊天记录、记忆库、图片、表情包等数据全部留在本机项目目录内，不会上传到任何第三方服务（除你自己配置的模型接口之外）。
 
+## 致谢
+
+本项目部分功能在**设计思路上**参考了以下开源项目，代码均为独立实现、未复制其源码：
+
+| 参考项目 | 作者 | 借鉴的设计 |
+| --- | --- | --- |
+| [LittleWhiteBox](https://github.com/RT15548/LittleWhiteBox) | biex | 长期记忆的分层思路（逐楼锚点 / 结构化事件 / 多路混合召回），Apache-2.0 |
+| [astrbot_plugin_stealer](https://github.com/nagatoquin33/astrbot_plugin_stealer) | nagatoquin33 | 表情包偷取流程设计 |
+| [astrbot_plugin_debounce](https://github.com/advent259141/astrbot_plugin_debounce) | advent259141 | 消息防抖判定思路 |
+| [astrbot_dg_lab_plugin](https://github.com/RC-CHN/astrbot_dg_lab_plugin) | RC-CHN | 郊狼（DG-LAB）连接功能设计 |
+
+`debounce_model/` 所用的连发判断模型来自 ModelScope `advent259141/astrbot_debouncer_small`（Apache-2.0），版权归原作者。
+
+Based on LittleWhiteBox by biex
+
 ## 免责声明
 
 - 本项目面向**个人自托管**用途，请自行确认所在地区的法律法规，以及你所使用模型服务商的条款
 - 禁止用于任何涉及未成年人的性相关内容，以及任何违法用途
 - NapCat / SnowLuma / ComfyUI 等第三方组件的使用风险与合规，由使用者自行承担
-- 内置连发判断模型 `debounce_model/` 来自 ModelScope `advent259141/astrbot_debouncer_small`（Apache-2.0），版权归原作者
 
 ## 许可证
 

@@ -1,98 +1,107 @@
-# QQbotX - 原生 OneBot v11 QQ AI 伴侣框架 (Phase 1)
+# QQX_AIBot
 
-一个轻量级、无臃肿依赖、针对大语言模型“强制破甲”（Tool Calling 注入）的极简原生 QQ AI 伴侣开发框架。
-无需 NoneBot / AstrBot 等重量级库，直接基于 OneBot v11 协议通信，对底层请求拥有绝对掌控力。
+**一个自托管、一次部署就能用的 QQ AI 伴侣。**
 
----
+这不是又一个机器人开发框架——框架这块已经有 AstrBot、NoneBot2 做得很好。QQX_AIBot 想做的是把「陪伴感」直接做成产品：部署完就有记忆、有情绪、会主动找你说话，不用自己一个个拼插件。
 
-## 🛠️ 项目架构
+## 它解决什么问题
 
-整个项目仅包含 **2 个 Python 文件** 和 **1 个 HTML 文件**：
+| 现有方案 | 缺什么 |
+| --- | --- |
+| AstrBot 等机器人框架 | 互动和插件生态很强，但伴侣感不是它的目标；想接便宜量大、角色扮演强的 Gemini 类模型，还要额外折腾 |
+| SillyTavern（酒馆） | 角色扮演与内容自由度好，但缺少 QQ 上的强互动和伴侣感 |
+| 自己拼装 | 记忆、情绪、主动搭话、表情包、生图、内容边界……每样都要单独找插件、单独调 |
 
-```text
-QQbotX/
-├── app.py             # FastAPI Web 服务、NapCat 子进程异步管理、Web UI 实时日志 WebSocket
-├── bot.py             # 原生 OneBot v11 客户端协议处理、LLM Tool Calling 破甲调用与正则容错
-├── index.html         # 极客风格 Web 控制台 (TailwindCSS CDN + 原生 JS + 等宽 ASCII 终端)
-├── requirements.txt   # 基础依赖清单
-└── config.json        # 运行时自动生成的参数配置文件
-```
+QQX_AIBot 把这些打包成一套可运行的整体：**协议端保活 + 多模型接入 + 人格与预设 + 长期记忆 + 情绪 + 主动性 + 多模态 + 内容边界处理**，双击启动即可。
 
----
+## 主要能力
 
-## 🚀 核心机制：Tool Calling 强制破甲
+### 部署与运行
+- 一键启动：双击 `一键启动.bat`，自动安装依赖（清华源）并拉起服务
+- WebUI 控制台：浏览器里配 API、人设、各项开关，不用改代码
+- 双协议端：NapCat / SnowLuma 可切换，支持自动启停与保活
+- 依赖极轻：`fastapi`、`uvicorn`、`aiohttp`、`websockets`、`pydantic`
 
-许多大语言模型（如各类具有强安全对齐与内审机制的模型）在面对角色扮演或敏感伴侣话题时，容易触发直接拒答拦截。
+### 对话与人格
+- 多套 API 档案（`llm_profiles`）：不同 key / 模型随时切换，OpenAI 兼容接口（Gemini、DeepSeek 等均可）
+- 人设、风格预设、世界书，注入层级可调
+- 时间注入、思考链剥离
+- 群聊独立链路：群规则、群内人格、静默标记、呼叫模式（@ 或关键词触发）
 
-本框架采用 **Tool Calling 注入破甲方案**：
-1. 在 payload 中构造强制工具定义：
-   ```json
-   {
-     "type": "function",
-     "function": {
-       "name": "output_text",
-       "description": "Output the final response text to the user.",
-       "parameters": {
-         "type": "object",
-         "properties": {
-           "content": {"type": "string", "description": "The response content"}
-         },
-         "required": ["content"]
-       }
-     }
-   }
-   ```
-2. 强制指定 `tool_choice: {"type": "function", "function": {"name": "output_text"}}`，绕过纯文本审查器的直接拒绝；
-3. 后端拦截 `choices[0].message.tool_calls[0].function.arguments`，结合 4 级 JSON / 正则容错算法抽取 `content` 内容，发送回 QQ 私聊用户。
+### 记忆与情绪
+- 向量长期记忆（`memory_engine/`）：按相关度召回、批量整理、跨群共享开关
+- 笔记本：AI 可读写的知识库，支持工具调用模式
+- 情绪状态：把当前情绪注入上下文
+- 剧情记忆整理：自动从对话中抽取值得长期记住的信息
 
----
+### 主动性与互动
+- 主动搭话：空闲一段时间后主动找人，频率可爬坡、夜间静默、每日上限、可召回旧话题
+- 戳一戳：回戳、跟戳、冷却与备注
+- 消息分段：按字数与节奏拆成多条，模拟打字
+- 连发合并：本地小模型判断对方是不是还没说完（自带 `debounce_model/`，纯 Python 前向，无需 onnxruntime）
+- 表情包：池子容量与淘汰策略、视觉打标、自动偷图（可设白名单/黑名单）
 
-## 📦 极简使用：双击一键启动（免命令行、免输端口）
+### 多模态
+- 看图：图片理解，带数量与体积上限
+- 生图：接 ComfyUI 工作流，支持节点映射与冷却
+- 表情包视觉理解与自动标注
 
-无需手动敲击命令，项目内置了一键批处理脚本：
+### 内容边界
+- 回复拦截处理：识别空回复 / 被拦截的回复并重试、兜底
+- 群聊秘书网关：判断「现在该不该插话」（关键词、情绪阈值、重复消息检测）
+- 预设系统：system prompt、风格、世界书的注入层级均可调，**具体内容由使用者自行配置**
 
-1. 进入 `C:\ai\QQX_AIBot\`，直接双击运行 **`一键启动.bat`**；
-2. 脚本将**自动**执行以下动作：
-   - 检查 Python 运行环境；
-   - 自动检测并补全必要依赖（使用清华高速镜像源）；
-   - 在 Windows 桌面上**自动生成【QQ AI伴侣控制台】桌面快捷方式**，以后直接在桌面上双击即可；
-   - 启动服务（端口为 **`8090`**，完美避开 ComfyUI 占用的 8000 端口）；
-   - **自动在系统默认浏览器中弹出 Web UI 控制台**，无需手动记端口！
-3. 网页打开后会自动拉起本地 NapCat（位于 `C:\ai\NapCat.Shell.Windows.Node`），控制台终端实时输出登录二维码供手机 QQ 扫码！
+## 快速开始
 
----
+1. **环境**：Windows，Python 3.10+（实测 3.12）
+2. **启动**：双击 `一键启动.bat`；或命令行 `py -3 start.py`（`python start.py` 亦可）
+3. **配置**：启动后控制台会自动打开，在「API 配置」里填模型 key
+4. **接协议端**：按 NapCat / SnowLuma 的说明登录 QQ，填入 WebSocket 地址与 token
 
-## 💡 使用流程
+> `config.json` 由程序首次运行时自动生成，**不要**提交或外传——它含密钥，已在 `.gitignore` 中。所有可配置项的键名见 `config.example.json`。
 
-1. **首次配置**：
-   - 在弹出的 Web UI 中填写你的大模型 API Base URL、API Key、Model Name 等；
-   - NapCat 路径已默认适配 `C:\ai\NapCat.Shell.Windows.Node\napcat.bat`；
-   - 点击 **【保存配置】**（支持热重载，无需重启服务）。
-2. **手机 QQ 扫码**：
-   - 网页右侧黑客终端实时流式打印 NapCat 启动日志与 **ASCII 登录二维码**；
-   - 用手机 QQ 扫描终端中的二维码完成登录（若捕获到登录链接，顶部也会弹出【扫码预览】弹窗）。
-3. **连接 QQ 链路**：
-   - NapCat 登录完成后，点击左侧 **【连接到 QQ】** 按钮；
-   - 看到状态指示灯变为绿色，即可通过 QQ 私聊体验专属 AI 伴侣！
+## 目录结构
 
----
+| 文件 / 目录 | 作用 |
+| --- | --- |
+| `app.py` | 后端主体：WebUI 接口、配置读写、默认配置 |
+| `index.html` | WebUI 控制台前端 |
+| `bot.py` | 主循环与消息分发 |
+| `claude_group.py` | 群聊独立链路 |
+| `memory.py` / `memory_engine/` | 长期记忆与向量库 |
+| `mood.py` | 情绪状态 |
+| `notebook.py` / `notebook_tools.py` | AI 可读写笔记本 |
+| `idle.py` | 主动搭话 |
+| `poke.py` | 戳一戳 |
+| `segments.py` | 消息分段 |
+| `debounce.py` / `debounce_model/` | 连发合并判断 |
+| `sticker_steal.py` | 表情包池与偷图 |
+| `comfyui.py` | ComfyUI 生图 |
+| `secretary.py` | 群聊秘书网关 |
+| `keepalive.py` | 协议端保活 |
+| `start.py` / `一键启动.bat` | 启动入口（自动装依赖） |
+| `config.example.json` | 配置键名清单 |
+| `预设_自检.py` | 前端预设自检脚本 |
 
-## 🔄 Phase 2：上下文持久化 + 聊天记录可视化窗口
+## 隐私
 
-### 新增能力
-1. **上下文持久化**：用户与 AI 的全部私聊上下文会自动落盘到项目根目录的 `history.json`，服务重启后依然保留；不再是最初「重启即丢失、只留最近 20 条」的内存 `history`。
-2. **聊天记录可视化窗口**：Web 控制台顶部新增【控制台 / 聊天记录】视图切换。聊天记录视图左侧为会话列表（按 QQ 用户），右侧以聊天气泡形式展示该用户的完整上下文，并随新消息实时刷新。
-3. **删除即抹除**：在聊天记录窗口中，鼠标悬停任意消息 → 点击 🗑，即可把该条消息从 `history.json` 与后续 Prompt 上下文中彻底抹除；也可一键「清空该会话」。
+聊天记录、记忆库、图片、表情包等数据全部留在本机项目目录内，不会上传到任何第三方服务（除你自己配置的模型接口之外）。
 
-### 新增后端接口
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/api/history` | 获取所有会话摘要（供会话列表） |
-| GET | `/api/history/{user_id}` | 获取指定用户的完整上下文 |
-| DELETE | `/api/history/{user_id}/message/{message_id}` | 从上下文中彻底抹除单条消息 |
-| DELETE | `/api/history/{user_id}` | 清空指定用户的全部上下文 |
+## 免责声明
 
-### 说明
-- 组装上下文时会自动合并相邻同角色消息，避免删除后出现连续同角色导致部分严格校验的 API 报错。
-- `history.json` 为纯文本 JSON，可直接查看或备份。
-- 本补丁已把原 `app.py` / `bot.py` / `index.html` / `README.md` 备份为 `*.bak_<时间戳>`。
+- 本项目面向**个人自托管**用途，请自行确认所在地区的法律法规，以及你所使用模型服务商的条款
+- 禁止用于任何涉及未成年人的性相关内容，以及任何违法用途
+- NapCat / SnowLuma / ComfyUI 等第三方组件的使用风险与合规，由使用者自行承担
+- 内置连发判断模型 `debounce_model/` 来自 ModelScope `advent259141/astrbot_debouncer_small`（Apache-2.0），版权归原作者
+
+## 许可证
+
+AGPL-3.0。Copyright (c) 2026 QQX_AIBot
+
+- **自己部署、自己用**：不触发任何额外义务
+- **改完分发，或把它作为网络服务对外提供**：必须按 AGPL-3.0 公开你的修改
+- 选它而不是 MIT 的原因很直接：不希望它被拿去闭源套壳，变成只有付费才能用的产品
+
+## 更新
+
+`git pull` 即可。`config.json` 与数据目录都不在版本控制里，更新不会覆盖你的配置和数据。

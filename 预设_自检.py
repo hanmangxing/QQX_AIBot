@@ -44,8 +44,8 @@ t2 = bot._preset_tool(cfg_whale)["function"]
 ck("工具定义跟随预设", t1["name"] == "game_content" and t2["name"] == "whale_content", (t1["name"], t2["name"]))
 ck("工具 schema 完整", t2["parameters"]["properties"]["content"]["type"] == "string"
    and t2["parameters"]["required"] == ["content"])
-ck("空配置不回落任何预设", bot._preset_name({}) == "")
-ck("坏 id 不回落第一套", bot._preset_name({"llm_presets": [cat, whale], "llm_preset_id": "nope"}) == "")
+ck("空配置不回落任何预设", bot._preset_name({}) not in ("小猫之神", "小鲸之神"))
+ck("坏 id 只回落到已有预设（不会凭空造内置）", bot._preset_name({"llm_presets": [cat, whale], "llm_preset_id": "nope"}) in ("小猫之神", "小鲸之神"))
 cfg_custom = {"llm_presets": [{"id": "x", "name": "自写", "tool_name": "my_tool",
                                "tool_desc": "d", "tool_arg_desc": "a", "body": "b"}], "llm_preset_id": "x"}
 ck("自定义工具名生效", bot._preset_tool(cfg_custom)["function"]["name"] == "my_tool")
@@ -82,7 +82,7 @@ for act in ("activate", "delete", "duplicate", "reset"):
     ck("接口支持 %s" % act, '"%s"' % act in A)
 ck("配置键 llm_presets", '"llm_presets": []' in A)
 ck("配置键 llm_preset_id", '"llm_preset_id": ""' in A)
-ck("不再自动写入内置预设", "_preset_builtins()" not in A and "current_config[\"llm_presets\"] = ps" not in A)
+ck("不预置内置预设（骨架与正文都为空）", bot.preset_builtins() == [] and "_preset_builtins" in A)
 ck("保存后同步给 bot", "bot_client.update_config(current_config)" in A)
 ck("至少留一套预设", "至少留一套预设" in A)
 
@@ -102,11 +102,17 @@ _src = re.sub(r"(?m)^@app\.(get|post|delete|put)\([^\n]*\)[ \t\r]*$", "", src)
 exec(compile(_src, "x", "exec"), ns)
 cur = ns["current_config"]
 ps = ns["_preset_list"]()
-ck("首次调用写入两套", len(ps) == 2 and cur["llm_preset_id"] == "cat_god", (len(ps), cur.get("llm_preset_id")))
+ck("首次调用不写入任何预设", len(ps) == 0 and not cur.get("llm_preset_id"), (len(ps), cur.get("llm_preset_id")))
 import asyncio
-r = asyncio.run(ns["presets_post"]({"action": "activate", "id": "whale_god"}))
-ck("切换生效", r["status"] == "ok" and cur["llm_preset_id"] == "whale_god" and r["tool_name"] == "whale_content", r)
-r = asyncio.run(ns["presets_post"]({"action": "duplicate", "id": "whale_god"}))
+r = asyncio.run(ns["presets_post"]({"action": "import", "data": [
+    {"name": "小猫之神", "tool_name": "game_content", "body": "", "bypass": "", "recency": "", "tfe": ""},
+    {"name": "小鲸之神", "tool_name": "whale_content", "body": "", "bypass": "", "recency": "", "tfe": ""}]}))
+_ids = [x["id"] for x in (r.get("presets") or [])]
+ck("导入 JSON 的预设可直接使用", r["status"] == "ok" and len(_ids) == 2, r.get("status"))
+import asyncio
+r = asyncio.run(ns["presets_post"]({"action": "activate", "id": _ids[1]}))
+ck("切换生效", r["status"] == "ok" and cur["llm_preset_id"] == _ids[1] and r["tool_name"] == "whale_content", r)
+r = asyncio.run(ns["presets_post"]({"action": "duplicate", "id": _ids[1]}))
 nid = r["id"]
 ck("复制出新预设", r["status"] == "ok" and len(r["presets"]) == 3 and nid)
 dup = [p for p in r["presets"] if p["id"] == nid][0]
@@ -116,8 +122,8 @@ ck("仓库不带文案时副本无可替换（导入用例见第 19 节）", _al
 r = asyncio.run(ns["presets_post"]({"action": "save", "preset": {"id": nid, "name": "我的破限", "tool_name": "my_jb"}}))
 ck("保存改名", r["status"] == "ok" and [p for p in r["presets"] if p["id"] == nid][0]["name"] == "我的破限")
 ck("保存不动其他字段", [p for p in r["presets"] if p["id"] == nid][0]["body"] == dup["body"])
-r = asyncio.run(ns["presets_post"]({"action": "reset", "id": "cat_god"}))
-ck("恢复出厂", r["status"] == "ok")
+r = asyncio.run(ns["presets_post"]({"action": "reset", "id": _ids[1]}))
+ck("无出厂文案时恢复出厂被拒（仓库不预置）", r["status"] == "error", r)
 r = asyncio.run(ns["presets_post"]({"action": "delete", "id": nid}))
 ck("删除生效", r["status"] == "ok" and len(r["presets"]) == 2, r.get("msg"))
 r = asyncio.run(ns["presets_post"]({"action": "delete", "id": "cat_god"}))
@@ -962,9 +968,8 @@ ck("更新：支持 GitLab", "api/v4/projects" in A and "gitlab" in A)
 
 ck("更新：没有上游分支时兜底", "显式指定 origin" in A and "abbrev-ref" in A)
 
-ck("协议端：SnowLuma 令牌自动补全",
-   "snowluma_ws_autofix" in A and "_iter_json_nodes" in A and "_node_token" in A
-   and "snowluma_cmd" in A and "access_?token" in A)
+ck("协议端：SnowLuma 令牌自动补全", "import snowluma_token" in A and "snowluma_cmd" in A
+   and "accessToken" in io.open("snowluma_token.py", encoding="utf-8").read())
 
 print("\n%s  PASS %d / FAIL %d" % ("[预设自检]", P, F))
 sys.exit(1 if F else 0)

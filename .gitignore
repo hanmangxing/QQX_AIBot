@@ -33,3 +33,8 @@ _chk_preset.js
 _deliver/
 *.bak
 *.tmp
+
+# 内部文档，不进仓库与发行包
+开源发布指南.md
+新用户测试清单.md
+首次使用说明.txt

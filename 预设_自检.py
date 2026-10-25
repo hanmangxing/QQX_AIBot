@@ -2,7 +2,7 @@
 """预设页签自检（只在内存/tempfile 跑，不碰真实配置）。"""
 import io, os, re, sys, json
 
-os.chdir(r"C:\ai\QQX_AIBot")
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 P = F = 0
 
 

@@ -3873,17 +3873,6 @@ def _upd_tags_url(plat, repo, host):
     return ""
 
 
-
-def _upd_platform():
-    try:
-        from version import PLATFORM as _P
-    except Exception:
-        _P = ""
-    if _P:
-        return str(_P).strip().lower()
-    return "gitee" if "gitee.com" in _upd_remote_url() else "github"
-
-
 def _upd_ver(s):
     nums = re.findall(r"\d+", str(s or ""))
     return tuple(int(x) for x in nums[:3]) or (0,)

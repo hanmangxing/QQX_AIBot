@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-P9 接入层：把记忆引擎挂到 QQbotX 现有 MemoryStore 上。
+P9 接入层：把记忆引擎挂到 QQX_AIBot 现有 MemoryStore 上。
 
 设计原则（重要）：
   * 不改 memory.py 的既有代码结构 —— 用模块级安装器 install_into_memory_store()

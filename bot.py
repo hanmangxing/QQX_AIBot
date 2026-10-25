@@ -1949,7 +1949,7 @@ class OneBotClient:
             await self.log("ERROR", err_msg)
             try:
                 await self.send_private_msg(user_id,
-                    "【QQbotX 提示】调用大模型遇到异常：%s: %s\n"
+                    "【QQX_AIBot 提示】调用大模型遇到异常：%s: %s\n"
                     "（若是 TimeoutError，说明模型这次回得太慢，可在 config.json 调大 llm_timeout，"
                     "或换一个非思维链模型）" % (type(e).__name__, e or "无错误文本"))
             except Exception:
@@ -2210,7 +2210,7 @@ class OneBotClient:
 
     async def _http_get_bytes(self, url: str) -> Optional[bytes]:
         # 腾讯图片 CDN 对没有 UA 的请求不友好，带上浏览器 UA
-        _hd = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) QQbotX/1.0",
+        _hd = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) QQX_AIBot/1.0",
                "Referer": "https://qun.qq.com/"}
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20),

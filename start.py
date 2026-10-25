@@ -5,9 +5,15 @@ import time
 import threading
 import webbrowser
 
+try:
+    from version import __version__
+except Exception:
+    __version__ = "unknown"
+
 def check_and_install_requirements():
     print("=" * 60)
-    print("   QQbotX // OneBot v11 原生 AI 伴侣控制台启动器")
+    print("   QQX_AIBot // OneBot v11 原生 AI 伴侣控制台启动器")
+    print("   版本 v%s" % __version__)
     print("=" * 60)
     print("[1/3] 正在检查依赖包...")
     

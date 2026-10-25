@@ -150,10 +150,10 @@ DEFAULT_CONFIG = {
     "system_prompt": "",
     "napcat_ws_url": "ws://127.0.0.1:3001",
     "napcat_cmd": r"C:\ai\NapCat.Shell.Windows.Node\napcat.bat",
-    # ---- 协议端：napcat（默认，QQbotX 托管进程+保活）/ snowluma（空协议模式，只连 OneBot）----
+    # ---- 协议端：napcat（默认，QQX_AIBot 托管进程+保活）/ snowluma（空协议模式，只连 OneBot）----
     "qq_protocol": "napcat",
     "snowluma_ws_url": "ws://127.0.0.1:3001",
-    # SnowLuma 的启动脚本路径（切到 SnowLuma 时由 QQbotX 拉起；空协议模式下不管登录/保活）
+    # SnowLuma 的启动脚本路径（切到 SnowLuma 时由 QQX_AIBot 拉起；空协议模式下不管登录/保活）
     "snowluma_cmd": r"C:\ai\SnowLuma\launcher.bat",
     "snowluma_keepalive": True,     # SnowLuma 进程保活：进程掉了自动拉起（对齐 NapCat 保活）
     "snowluma_ka_interval": 30,     # SnowLuma 保活检测间隔（秒）
@@ -305,9 +305,9 @@ def save_config(config: Dict[str, Any]):
 current_config = load_config()
 
 # ---------------- 协议端（NapCat / SnowLuma）----------------
-# qq_protocol = "napcat"（默认）：QQbotX 托管 NapCat 进程 + 登录 + 保活。
+# qq_protocol = "napcat"（默认）：QQX_AIBot 托管 NapCat 进程 + 登录 + 保活。
 # qq_protocol = "snowluma"（空协议模式）：SnowLuma 自己挂在 QQ 本体上跑（自带 WebUI、
-#   自己扫码），QQbotX 只做 OneBot v11 客户端连接，不接管进程、不跑 NapCat 保活。
+#   自己扫码），QQX_AIBot 只做 OneBot v11 客户端连接，不接管进程、不跑 NapCat 保活。
 def protocol_backend() -> str:
     """当前协议端：napcat / snowluma。"""
     return "snowluma" if str(current_config.get("qq_protocol") or "").strip().lower() == "snowluma" else "napcat"
@@ -382,7 +382,7 @@ def save_world_book(data: list):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-app = FastAPI(title="QQbotX - OneBot v11 AI 伴侣")
+app = FastAPI(title="QQX_AIBot - OneBot v11 AI 伴侣")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -2643,7 +2643,7 @@ def _ka_log(level, msg):
 def _ka_restart():
     """保活模块要求重启 NapCat 时，走同一个被跟踪的启停入口。
 
-    直接 Popen 起来的话 QQbotX 拿不到这个进程：控制台看不到它的输出、/api/status
+    直接 Popen 起来的话 QQX_AIBot 拿不到这个进程：控制台看不到它的输出、/api/status
     也会显示未运行；再点一次「启动」还会再起一个实例抢端口。这里统一切到
     stop_napcat + start_napcat。
     """
@@ -2950,7 +2950,7 @@ def _napcat_webui_url() -> str:
     """读 NapCat 自己写的 webui.json，拼出带 token 的原生后台地址（免手填 Token）。"""
     if napcat_webui_live:
         return napcat_webui_live
-    # QQbotX 里记的明文密码最优先（NapCat 自己存的是 hash，拿来拼 URL 会报 token invalid）
+    # QQX_AIBot 里记的明文密码最优先（NapCat 自己存的是 hash，拿来拼 URL 会报 token invalid）
     _t = str(current_config.get("napcat_webui_token") or "").strip()
     if _t:
         try:
@@ -3016,7 +3016,7 @@ async def napcat_webui(wait: int = 0):
                     await asyncio.sleep(1)
         _hint = list(napcat_hints)[-6:] or [x for x in napcat_console_tail[-40:] if "http" in x][-4:]
         _src = ("启动输出" if (_u and _u == napcat_webui_live)
-                else ("QQbotX 里记的密码" if str(current_config.get("napcat_webui_token") or "").strip() and str(current_config.get("napcat_webui_token") or "") in _u
+                else ("QQX_AIBot 里记的密码" if str(current_config.get("napcat_webui_token") or "").strip() and str(current_config.get("napcat_webui_token") or "") in _u
                       else ("配置文件" if "token=" in _u else "无 token")))
         return {"status": "ok", "url": _u, "with_token": "token=" in _u, "source": _src, "hint": _hint}
     except Exception as e:
@@ -3169,9 +3169,9 @@ def _snowluma_pids() -> list:
 
 
 # ---------------- 协议端输出：写文件 + 跟随读取 ----------------
-# 以前用 stdout=PIPE：QQbotX 被强杀/崩溃时管道写端断开，协议端会不停刷
+# 以前用 stdout=PIPE：QQX_AIBot 被强杀/崩溃时管道写端断开，协议端会不停刷
 # EPIPE: broken pipe 并卡死（实测 SnowLuma 5 分钟写了 1GB 日志、OneBot 端口掉线）。
-# 改成协议端自己把输出写进文件，QQbotX 只跟随文件增量读，父进程死活都不影响它。
+# 改成协议端自己把输出写进文件，QQX_AIBot 只跟随文件增量读，父进程死活都不影响它。
 _CONSOLE_FILES = {}
 
 
@@ -3249,7 +3249,7 @@ async def start_snowluma() -> dict:
         return {"status": "warn", "message": "SnowLuma 进程已经在运行中"}
     if _snowluma_starting and (time.time() - _snowluma_starting_at) < 90:
         return {"status": "warn", "message": "SnowLuma 正在启动中，请稍候"}
-    # 已经在跑（多半是手工起的，QQbotX 没跟踪）就不要再起一个抢端口
+    # 已经在跑（多半是手工起的，QQX_AIBot 没跟踪）就不要再起一个抢端口
     try:
         _exist = await asyncio.get_running_loop().run_in_executor(None, _snowluma_pids)
         if _exist:
@@ -3283,7 +3283,7 @@ async def start_snowluma() -> dict:
 
 
 async def stop_snowluma() -> dict:
-    """停止 SnowLuma 进程（含 QQbotX 未跟踪、手工启动的实例）。"""
+    """停止 SnowLuma 进程（含 QQX_AIBot 未跟踪、手工启动的实例）。"""
     global snowluma_process, snowluma_reader_task
     _killed = []
     if snowluma_process and snowluma_process.returncode is None:
@@ -3338,7 +3338,7 @@ def snowluma_webui_url() -> str:
     """SnowLuma 自带 WebUI 的地址（端口读它自己的 config/runtime.json，默认 5099）。
 
     SnowLuma 必须先在它自己的 WebUI 里注入 QQ 进程并登录，OneBot 端口才会开，
-    QQbotX 才连得上——所以这里给它一个可直接跳转的入口。
+    QQX_AIBot 才连得上——所以这里给它一个可直接跳转的入口。
     """
     _port, _host = 5099, "127.0.0.1"
     try:
@@ -3361,7 +3361,7 @@ async def api_snowluma_webui():
         _onebot = await _wait_tcp(_h, _p, timeout=1.0)
     except Exception:
         pass
-    # WebUI 端口在监听 = SnowLuma 确实在跑（QQbotX 重启后没跟踪它的进程时也准）
+    # WebUI 端口在监听 = SnowLuma 确实在跑（QQX_AIBot 重启后没跟踪它的进程时也准）
     _wurl = snowluma_webui_url()
     try:
         _wport = int(_wurl.rsplit(":", 1)[-1])
@@ -3518,7 +3518,7 @@ async def start_napcat():
         cwd = r"C:\ai\NapCat.Shell.Windows.Node"
 
     # 启动前清掉残留的 NapCat 进程：残留实例占着 6099，新实例只能漂到 6100，
-    # 而 QQbotX 的 WebUI 接口按端口走，就会连到另一个实例上
+    # 而 QQX_AIBot 的 WebUI 接口按端口走，就会连到另一个实例上
     try:
         _left = await asyncio.get_running_loop().run_in_executor(None, _KA.kill_napcat_procs)
         if _left:
@@ -3792,6 +3792,16 @@ def _preset_scope_exit(saved):
         bot_client.update_config(current_config)
     except Exception:
         pass
+
+
+@app.get("/api/version")
+async def api_version():
+    """当前版本（WebUI 显示 / 检查更新用）。"""
+    try:
+        from version import __version__ as _v
+    except Exception:
+        _v = "unknown"
+    return {"status": "ok", "version": _v}
 
 
 @app.get("/api/presets")

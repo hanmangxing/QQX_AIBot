@@ -12,7 +12,7 @@ memory_engine —— 长期记忆引擎（独立实现）。
     insight.py     人物关系 / 档案 / 世界状态的可视化数据
     state2.py      状态变量引擎：解析→执行→守卫
     tasks.py       委托任务
-    bridge.py      接入层：把本引擎挂到 QQbotX 的 MemoryStore 上
+    bridge.py      接入层：把本引擎挂到 QQX_AIBot 的 MemoryStore 上
 
 本包不 import app.py / bot.py，可独立测试。
 """

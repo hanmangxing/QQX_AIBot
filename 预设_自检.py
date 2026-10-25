@@ -117,7 +117,10 @@ src = A[A.index("def _preset_flush"):A.index('@app.get("/api/mem/insight/{user_i
 ns = {"current_config": {"llm_presets": [], "llm_preset_id": ""}, "save_config": lambda c: None,
       "bot_client": types.SimpleNamespace(update_config=lambda c: None), "print": print,
       "Body": lambda default=None: None, "Dict": dict, "Any": object, "time": __import__("time")}
-exec(compile(src.replace("@app.get(\"/api/presets\")", "").replace("@app.post(\"/api/presets\")", ""), "x", "exec"), ns)
+# 剥掉所有 @app.<method>("...") 装饰器：本片段只做函数级校验，不依赖真实 FastAPI 实例。
+# 用通用剥法，新增路由时不会再因为装饰器引用未定义的 app 而 NameError。
+_src = re.sub(r"(?m)^@app\.(get|post|delete|put)\([^\n]*\)[ \t\r]*$", "", src)
+exec(compile(_src, "x", "exec"), ns)
 cur = ns["current_config"]
 ps = ns["_preset_list"]()
 ck("首次调用写入两套", len(ps) == 2 and cur["llm_preset_id"] == "cat_god", (len(ps), cur.get("llm_preset_id")))

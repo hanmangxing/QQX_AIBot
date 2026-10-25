@@ -158,7 +158,7 @@ def webui_info():
 
     端口优先用运行时抓到的实际端口（LIVE_JSON，app.py 从 NapCat 启动输出里抓），
     再退回 napcat/config/webui.json 里配的端口。NapCat 端口被占时会自己往后漂
-    （6099 -> 6100），不跟随的话 QQbotX 会连到另一个残留实例上。
+    （6099 -> 6100），不跟随的话 QQX_AIBot 会连到另一个残留实例上。
     """
     host, port, tok = "127.0.0.1", 6099, ""
     try:
@@ -346,7 +346,7 @@ def napcat_procs():
 def kill_napcat_procs(keep=()):
     """杀掉残留的 NapCat 进程（taskkill /T 连子进程一起），返回被杀的 pid 列表。
 
-    keep 里的 pid 不动（比如当前 QQbotX 正在用的那个实例）。
+    keep 里的 pid 不动（比如当前 QQX_AIBot 正在用的那个实例）。
     """
     killed, failed = [], []
     for p in napcat_procs():
@@ -683,7 +683,7 @@ def captcha_login(ticket, randstr, sid="", uin="", url=""):
     """验证码第二步：把腾讯 TCaptcha 回调拿到的 ticket / randstr 交给 NapCat 完成登录。
 
     sid / uin / url 由前端从弹窗里那条验证链接解出来一起传：验证码可能是 NapCat
-    自己密码回退时弹的（QQbotX 没调过 L3），只靠 _state 会误判成"没有拿到 sid"。
+    自己密码回退时弹的（QQX_AIBot 没调过 L3），只靠 _state 会误判成"没有拿到 sid"。
     """
     cfg = load_cfg()
     qq = (str(uin or "").strip()

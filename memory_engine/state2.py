@@ -14,7 +14,7 @@ P7 状态变量引擎：解析 → 执行 → 守卫
                 子树递归校验；不合法时返回错误而不写坏数据。
   semantic.js   把变更描述成自然语言（供注入/展示）。
 
-本实现保持同样的语义，去掉酒馆宿主依赖，纯 Python、可直接嵌进 QQbotX。
+本实现保持同样的语义，去掉酒馆宿主依赖，纯 Python、可直接嵌进 QQX_AIBot。
 """
 from __future__ import annotations
 

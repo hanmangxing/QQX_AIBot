@@ -14,7 +14,7 @@ P8 委托任务
     已处理消息去重（chatId_messageId_sendDate 作 key）、可 resetTaskRun 复位。
   * 楼层计数：getFloorCounts（user/llm/total）→ pickFloorByType 取当前楼层。
 
-QQbotX 没有浏览器 JS 沙箱，因此把「执行」抽象成两种可插拔方式：
+QQX_AIBot 没有浏览器 JS 沙箱，因此把「执行」抽象成两种可插拔方式：
   1) 文本指令 —— commands 直接作为任务提示注入 Prompt（最常见用法：委托角色去做某事）；
   2) Python 处理器 —— 注册 callable，由业务侧决定真正动作。
 调度、锁、冷却、去重、楼层语义全部保持与源实现一致。

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-QQbotX · ComfyUI 生图引擎
+QQX_AIBot · ComfyUI 生图引擎
 =========================
 对接本地 ComfyUI（HTTP API），把提示词注入工作流指定节点后出图。
 
@@ -81,7 +81,7 @@ DEFAULT_WORKFLOW: Dict[str, Any] = {
     "8": {"class_type": "VAEDecode",
           "inputs": {"samples": ["7", 0], "vae": ["3", 0]}},
     "9": {"class_type": "SaveImage",
-          "inputs": {"filename_prefix": "QQbotX", "images": ["8", 0]},
+          "inputs": {"filename_prefix": "QQX_AIBot", "images": ["8", 0]},
           "_meta": {"title": "Save Image"}},
 }
 

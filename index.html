@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>QQbotX - OneBot v11 AI 伴侣控制台</title>
+  <title>QQX_AIBot - OneBot v11 AI 伴侣控制台</title>
   <!-- TailwindCSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -248,7 +248,7 @@
           <div class="text-sm font-bold text-gray-200">❄️ SnowLuma</div>
           <span id="slState" class="text-xs font-mono text-gray-400">—</span>
         </div>
-        <button id="btnSnowlumaWebui" onclick="snowlumaOpenWebUI()" title="打开 SnowLuma 自带的 WebUI：登录 QQ、注入 QQ 进程、管它的账号与插件都在那里。SnowLuma 必须先在自己的 WebUI 里完成注入登录，OneBot 端口才会开，QQbotX 才连得上"
+        <button id="btnSnowlumaWebui" onclick="snowlumaOpenWebUI()" title="打开 SnowLuma 自带的 WebUI：登录 QQ、注入 QQ 进程、管它的账号与插件都在那里。SnowLuma 必须先在自己的 WebUI 里完成注入登录，OneBot 端口才会开，QQX_AIBot 才连得上"
                 class="mt-1 w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-[#21262d] hover:bg-[#30363d] border border-borderDark text-gray-200 rounded-lg text-xs font-mono transition">
           <span>❄️ 打开 SnowLuma WebUI</span>
         </button>
@@ -478,7 +478,7 @@
 
       <!-- 控制台输出区域 (关键：flex-1 min-h-0 overflow-y-auto，代码内部滚动，不把整个页面撑高) -->
       <div id="terminalBody" class="flex-1 min-h-0 p-4 overflow-y-auto ascii-terminal text-[13px] select-text bg-[#0a0e14] break-words">
-        <div class="text-gray-500 mb-2">// QQbotX 极客控制台就绪，【秘书网关】已就绪，等待 NapCat 进程启动或 WebSocket 链路激活...</div>
+        <div class="text-gray-500 mb-2">// QQX_AIBot 极客控制台就绪，【秘书网关】已就绪，等待 NapCat 进程启动或 WebSocket 链路激活...</div>
       </div>
     </div>
   </main>
@@ -493,21 +493,21 @@
             <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
             协议端
           </h2>
-          <p class="text-[11px] text-gray-500 mb-4">决定 QQbotX 连哪一个 OneBot v11 协议端。两边对外都是 OneBot v11，消息链路完全一致；差别只在 NapCat 专属的进程托管、登录与保活。</p>
+          <p class="text-[11px] text-gray-500 mb-4">决定 QQX_AIBot 连哪一个 OneBot v11 协议端。两边对外都是 OneBot v11，消息链路完全一致；差别只在 NapCat 专属的进程托管、登录与保活。</p>
 
           <div class="space-y-3">
             <label class="flex items-start gap-3 cursor-pointer group">
               <input id="protoNapcat" type="radio" name="protoBackend" value="napcat" onchange="protoPick('napcat')" class="mt-0.5 accent-emerald-500 w-4 h-4 shrink-0">
               <span class="min-w-0">
                 <span class="text-xs text-gray-200 block group-hover:text-white">NapCat</span>
-                <span class="text-[11px] text-gray-500 block mt-1 leading-relaxed">无头协议端，QQbotX 托管它的进程：自动拉起、WebUI 登录 / 扫码 / 验证码、NapCat 保活（L1~L5）。</span>
+                <span class="text-[11px] text-gray-500 block mt-1 leading-relaxed">无头协议端，QQX_AIBot 托管它的进程：自动拉起、WebUI 登录 / 扫码 / 验证码、NapCat 保活（L1~L5）。</span>
               </span>
             </label>
             <label class="flex items-start gap-3 cursor-pointer group">
               <input id="protoSnowluma" type="radio" name="protoBackend" value="snowluma" onchange="protoPick('snowluma')" class="mt-0.5 accent-emerald-500 w-4 h-4 shrink-0">
               <span class="min-w-0">
                 <span class="text-xs text-gray-200 block group-hover:text-white">SnowLuma（空协议模式）</span>
-                <span class="text-[11px] text-gray-500 block mt-1 leading-relaxed">SnowLuma 挂在 QQ 本体上自己跑（自己扫码、自带 WebUI 在 5099）。切换协议端时 QQbotX 会自动停掉 NapCat 并把它拉起来；但扫码登录、WebUI（5099）、保活都归它自己，QQbotX 只连它的 OneBot 服务，控制台里的 NapCat 保活卡片会隐藏。</span>
+                <span class="text-[11px] text-gray-500 block mt-1 leading-relaxed">SnowLuma 挂在 QQ 本体上自己跑（自己扫码、自带 WebUI 在 5099）。切换协议端时 QQX_AIBot 会自动停掉 NapCat 并把它拉起来；但扫码登录、WebUI（5099）、保活都归它自己，QQX_AIBot 只连它的 OneBot 服务，控制台里的 NapCat 保活卡片会隐藏。</span>
               </span>
             </label>
           </div>
@@ -4503,7 +4503,7 @@
       if (kaBusyTimer) { clearInterval(kaBusyTimer); kaBusyTimer = null; }
     }
 
-    // 链接验证跟进：用户在新标签里完成腾讯页面验证后，QQbotX 拿不到任何回调
+    // 链接验证跟进：用户在新标签里完成腾讯页面验证后，QQX_AIBot 拿不到任何回调
     // （验证是在腾讯页面上做的，凭证不会传回来）。所以改为主动去问：
     // 定期重新触发一次密码登录，腾讯那边一旦放行，这次登录就会直接通过
     // （refresh_captcha 返回 need_captcha=false），这时就说明验证生效了。
@@ -4532,7 +4532,7 @@
       };
       setTimeout(tick, 12000);              // 先给 12 秒去页面里做验证
       kaLinkTimer = setInterval(tick, 15000);
-      appendLog('INFO', '已开始盯「链接验证」：你在新页面验证完成后，QQbotX 会自动重试登录并弹出二维码，不用回来手动点');
+      appendLog('INFO', '已开始盯「链接验证」：你在新页面验证完成后，QQX_AIBot 会自动重试登录并弹出二维码，不用回来手动点');
     }
 
     // 验证完成后 NapCat 若回退到扫码登录，就把它刚生成的真二维码自动弹出来
@@ -4578,7 +4578,7 @@
         'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(url);
       // 关键：验证后的跟进机制不依赖弹窗。
       // 不管「自动弹出验证窗口」开关是开是关，只要拿到验证链接就开始盯登录状态：
-      // 你在弹窗里验证、还是关掉弹窗自己点链接去验证，做完之后 QQbotX 都会
+      // 你在弹窗里验证、还是关掉弹窗自己点链接去验证，做完之后 QQX_AIBot 都会
       // 自动发现 NapCat 的进展（生成登录二维码 / 登录成功），不用你回来手动触发。
       if (typeof kaWatchLogin === 'function') kaWatchLogin('人工验证');
       // 设置页里「检测到人工验证时自动弹出验证窗口」关掉后就不弹，只记日志
@@ -4588,7 +4588,7 @@
       } else {
         appendLog('WARN', '⚠️ 检测到 NapCat 需要人工验证（设置里关了自动弹窗，未弹出）—— 验证链接见下方，可自行打开');
         appendLog('WARN', '验证链接：' + url);
-        appendLog('INFO', '已开始盯登录状态：你点链接去腾讯页面验证完，QQbotX 会自动发现并弹出登录二维码，不用回来手动点');
+        appendLog('INFO', '已开始盯登录状态：你点链接去腾讯页面验证完，QQX_AIBot 会自动发现并弹出登录二维码，不用回来手动点');
         // 链接验证没有回调，得主动去问：定期重试登录，放行了就立刻接上
         if (typeof kaWatchLinkVerify === 'function') kaWatchLinkVerify();
       }
@@ -7754,7 +7754,7 @@
     }
 
     async function comfyClearImgs() {
-      if (!confirm('清空全部出图历史？（只删 QQbotX 的 comfyui_output，不动 ComfyUI 自己的输出目录）')) return;
+      if (!confirm('清空全部出图历史？（只删 QQX_AIBot 的 comfyui_output，不动 ComfyUI 自己的输出目录）')) return;
       try {
         const r = await fetch('/api/comfy/images/clear', { method: 'POST' });
         const d = await r.json();

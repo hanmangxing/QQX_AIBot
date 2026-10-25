@@ -40,7 +40,8 @@ DEFAULT_CONFIG = {
     "llm_api_key": "",
     "llm_model": "gpt-4o-mini",
     "temperature": 0.7,
-    "llm_profiles": [],              # 主对话 API 的多套配置档（保存/切换用）
+    "llm_profiles": [],
+    "wb_profiles": {},                # 世界书配置档：{"main": [...], "claude": [...]}              # 主对话 API 的多套配置档（保存/切换用）
 
     # ---------------- 笔记本（AI 可读写的独立知识库） ----------------
     "notebook_enabled": True,        # 笔记本总开关
@@ -1100,6 +1101,142 @@ async def notebook_tools_test():
                     "或把工具当成了普通文本。工具会静默失效。"),
         "raw_content": str(msg.get("content") or "")[:300],
     }
+
+
+# ---------------------------------------------------------------- 世界书配置档
+# 每个数据源（main=主 Bot 私聊 / claude=群聊模式）各自独立一套配置档，
+# 一个数据源可以存多套世界书，随时切换，互不影响。
+
+WB_PROFILE_SCOPES = ("main", "claude")
+
+
+def _wb_scope_norm(scope) -> str:
+    return "claude" if str(scope or "").strip().lower() == "claude" else "main"
+
+
+def _wb_profile_store() -> dict:
+    st = current_config.get("wb_profiles")
+    if not isinstance(st, dict):
+        st = {}
+        current_config["wb_profiles"] = st
+    for sc in WB_PROFILE_SCOPES:
+        if not isinstance(st.get(sc), list):
+            st[sc] = []
+    return st
+
+
+def _wb_profile_rows(scope: str) -> list:
+    return _wb_profile_store().get(scope, [])
+
+
+def _wb_path_for(scope: str) -> Path:
+    """某个数据源的 world_book.json 路径（主 Bot 在项目根，群聊模式在它自己的 data_dir）。"""
+    if scope == "claude":
+        cm = _claude_mode()
+        if cm is not None:
+            return Path(cm.data_dir) / "world_book.json"
+    return WORLD_BOOK_FILE
+
+
+def _wb_load_for(scope: str) -> list:
+    p = _wb_path_for(scope)
+    if p == WORLD_BOOK_FILE:
+        return load_world_book()
+    try:
+        if p.exists():
+            return json.loads(p.read_text(encoding="utf-8")) or []
+    except Exception as e:
+        logger.warning(f"读取 {p} 失败: {e}")
+    return []
+
+
+def _wb_save_for(scope: str, entries: list):
+    p = _wb_path_for(scope)
+    if p == WORLD_BOOK_FILE:
+        save_world_book(entries)
+        return
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _wb_apply_for(scope: str, entries: list):
+    if scope == "claude":
+        bot_client.update_claude_world_book(entries)
+    else:
+        bot_client.update_world_book(entries)
+
+
+@app.get("/api/world_book/profiles")
+async def wb_profiles_list(scope: str = "main"):
+    """列出某个数据源已保存的世界书配置档 + 当前世界书条数。"""
+    sc = _wb_scope_norm(scope)
+    rows = [{"name": str(r.get("name")), "count": len(r.get("entries") or [])}
+            for r in _wb_profile_rows(sc) if isinstance(r, dict) and r.get("name")]
+    return {"status": "ok", "scope": sc, "profiles": rows,
+            "current_count": len(_wb_load_for(sc))}
+
+
+@app.post("/api/world_book/profiles")
+async def wb_profile_save(payload: Dict[str, Any]):
+    """把该数据源当前的世界书存成具名配置档（同名覆盖）。"""
+    sc = _wb_scope_norm(payload.get("scope"))
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        return {"status": "error", "message": "配置档名字不能为空"}
+    entries = _wb_load_for(sc)
+    rows = [r for r in _wb_profile_rows(sc) if str(r.get("name")) != name]
+    rows.append({"name": name, "entries": entries})
+    _wb_profile_store()[sc] = rows
+    save_config(current_config)
+    await log_publisher("SUCCESS", "世界书配置档已保存：%s（%s，%d 条）"
+                        % (name, "主 Bot" if sc == "main" else "群聊模式", len(entries)))
+    return {"status": "ok", "scope": sc, "count": len(entries)}
+
+
+@app.post("/api/world_book/profiles/apply")
+async def wb_profile_apply(payload: Dict[str, Any]):
+    """切换到某个世界书配置档：整份覆盖该数据源的世界书并热加载，不重启。"""
+    sc = _wb_scope_norm(payload.get("scope"))
+    name = str(payload.get("name") or "").strip()
+    row = next((r for r in _wb_profile_rows(sc) if str(r.get("name")) == name), None)
+    if row is None:
+        return {"status": "not_found", "message": "没有这个配置档：%s" % name}
+    entries = row.get("entries") or []
+    _wb_save_for(sc, entries)
+    _wb_apply_for(sc, entries)
+    await log_publisher("SUCCESS", "已切换世界书配置档：%s（%s，%d 条）"
+                        % (name, "主 Bot" if sc == "main" else "群聊模式", len(entries)))
+    return {"status": "ok", "scope": sc, "entries": entries}
+
+
+@app.post("/api/world_book/profiles/rename")
+async def wb_profile_rename(payload: Dict[str, Any]):
+    """改配置档的名字（不动当前正在用的世界书）。"""
+    sc = _wb_scope_norm(payload.get("scope"))
+    old = str(payload.get("old") or "").strip()
+    new = str(payload.get("new") or "").strip()
+    if not old or not new:
+        return {"status": "error", "message": "旧名和新名都要有"}
+    rows = _wb_profile_rows(sc)
+    if not any(str(r.get("name")) == old for r in rows):
+        return {"status": "not_found", "message": "没有这个配置档：%s" % old}
+    if any(str(r.get("name")) == new for r in rows):
+        return {"status": "error", "message": "已经有叫「%s」的配置档了" % new}
+    for r in rows:
+        if str(r.get("name")) == old:
+            r["name"] = new
+    _wb_profile_store()[sc] = rows
+    save_config(current_config)
+    return {"status": "ok", "scope": sc}
+
+
+@app.delete("/api/world_book/profiles/{name}")
+async def wb_profile_delete(name: str, scope: str = "main"):
+    """删除某个世界书配置档（当前正在用的世界书不受影响）。"""
+    sc = _wb_scope_norm(scope)
+    _wb_profile_store()[sc] = [r for r in _wb_profile_rows(sc) if str(r.get("name")) != name]
+    save_config(current_config)
+    return {"status": "ok", "scope": sc}
 
 
 @app.get("/api/llm/profiles")

@@ -3939,6 +3939,22 @@
             <button id="wbScopeMain" type="button" onclick="wbScopeSet('main')" title="看主 Bot 的世界书">主 Bot</button>
             <button id="wbScopeClaude" type="button" onclick="wbScopeSet('claude')" title="看群聊模式的世界书">群聊模式</button>
           </span>
+            <span class="flex items-center gap-1 ml-2 pl-2 border-l border-borderDark">
+              <span class="text-[10px] text-gray-400">💾 配置档</span>
+              <select id="wbProfileSel" onchange="wbApplyProfile()" title="选中即切换这一档的世界书"
+                      class="bg-terminal border border-borderDark focus:border-indigo-500 rounded px-1.5 py-0.5 text-gray-200 text-[11px] max-w-[160px]">
+                <option value="">-- 还没有保存的配置档 --</option>
+              </select>
+              <button type="button" onclick="wbSaveProfile()" title="把当前世界书存进选中的配置档"
+                      class="px-2 py-0.5 rounded bg-emerald-900/60 border border-emerald-700 text-emerald-100 text-[11px] hover:bg-emerald-800/60">💾 保存</button>
+              <button type="button" onclick="wbNewProfile()" title="用当前世界书新建一个配置档"
+                      class="px-2 py-0.5 rounded bg-blue-950/60 border border-blue-800 text-blue-200 text-[11px] hover:bg-blue-900/60">➕ 新建</button>
+              <button type="button" onclick="wbRenameProfile()" title="给选中的配置档改名"
+                      class="px-2 py-0.5 rounded bg-gray-900 border border-gray-700 text-gray-300 text-[11px] hover:bg-gray-800">✏️ 改名</button>
+              <button type="button" onclick="wbDeleteProfile()" title="删除选中的配置档（不影响当前世界书）"
+                      class="px-2 py-0.5 rounded bg-rose-950/50 border border-rose-800 text-rose-300 text-[11px] hover:bg-rose-900/50">🗑 删除</button>
+              <span id="wbProfileMsg" class="text-[11px] font-mono text-gray-400"></span>
+            </span>
         </h2>
       </div>
       <div class="flex items-center space-x-2">
@@ -5063,6 +5079,7 @@
         worldBookEntries = data.entries || [];
         renderWorldBookCards();
         updateWorldBookStats();
+        await wbLoadProfiles();   // 配置档列表跟着当前数据源走
       } catch (err) {
         console.error('获取世界书设定失败:', err);
       }
@@ -6536,7 +6553,12 @@
       // scopeSet 会顺带 reloadCurrentView()，把本页签数据按新数据源重拉一遍
       if (typeof scopeSet === 'function') await scopeSet(sc, false);
     }
-    function wbScopeSet(sc) { return tabScopeSet('wb', sc); }
+    async function wbScopeSet(sc) {
+      const r = await tabScopeSet('wb', sc);
+      wbScope = (sc === 'claude') ? 'claude' : 'main';
+      await wbLoadProfiles();   // 每个数据源各自一套配置档，切档就换列表
+      return r;
+    }
     async function presetScopeSet(sc) {
       const r = await tabScopeSet('preset', sc);
       // 切档后立刻把「隐藏思维链正则块」勾选框同步成这一档的开关值
@@ -8370,6 +8392,119 @@
         await llmLoadProfiles('');
         llmProfileMsg('已删除：' + name, true);
       } catch (e) { llmProfileMsg(e.message, false); }
+    }
+
+    // ---------------- 世界书配置档（主 Bot / 群聊模式 各自独立一套） ----------------
+    let WB_PROFILES = [];
+
+    function wbScopeLabel(sc) { return sc === 'claude' ? '群聊模式' : '主 Bot'; }
+
+    function wbProfileMsg(t, ok) {
+      const el = document.getElementById('wbProfileMsg');
+      if (!el) return;
+      el.textContent = t || '';
+      el.className = 'text-[11px] font-mono ' + (ok ? 'text-emerald-400' : 'text-rose-400');
+      if (t) setTimeout(() => { if (el.textContent === t) el.textContent = ''; }, 4000);
+    }
+
+    async function wbLoadProfiles(keep) {
+      const sel = document.getElementById('wbProfileSel');
+      if (!sel) return;
+      try {
+        const r = await fetch('/api/world_book/profiles?scope=' + encodeURIComponent(wbScope || 'main'));
+        const d = await r.json();
+        WB_PROFILES = d.profiles || [];
+        const cur = keep !== undefined ? keep : sel.value;
+        sel.innerHTML = WB_PROFILES.length
+          ? WB_PROFILES.map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}（${p.count} 条）</option>`).join('')
+          : '<option value="">-- 还没有保存的配置档 --</option>';
+        if (cur && WB_PROFILES.some(p => p.name === cur)) sel.value = cur;
+      } catch (e) { wbProfileMsg('读取配置档失败：' + e.message, false); }
+    }
+
+    async function wbApplyProfile() {
+      const sel = document.getElementById('wbProfileSel');
+      const name = sel ? sel.value : '';
+      if (!name) return;
+      try {
+        const r = await fetch('/api/world_book/profiles/apply', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scope: wbScope || 'main', name: name })
+        });
+        const d = await r.json();
+        if (d.status !== 'ok') throw new Error(d.message || '切换失败');
+        await fetchWorldBook();
+        wbProfileMsg('已切换到：' + name, true);
+        appendLog('SUCCESS', `[世界书] ${wbScopeLabel(wbScope)} 已切换到配置档：` + name);
+      } catch (e) { wbProfileMsg(e.message, false); }
+    }
+
+    async function wbSaveProfile() {
+      const sel = document.getElementById('wbProfileSel');
+      const name = sel ? sel.value : '';
+      if (!name) { wbProfileMsg('先在左边选一个配置档，或点「➕ 新建」', false); return; }
+      if (!confirm(`把 ${wbScopeLabel(wbScope)} 当前的世界书存进配置档「${name}」？\n（会覆盖这个配置档里的旧内容）`)) return;
+      try {
+        const r = await fetch('/api/world_book/profiles', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scope: wbScope || 'main', name: name })
+        });
+        const d = await r.json();
+        if (d.status !== 'ok') throw new Error(d.message || '保存失败');
+        await wbLoadProfiles(name);
+        wbProfileMsg('已保存到：' + name, true);
+      } catch (e) { wbProfileMsg(e.message, false); }
+    }
+
+    async function wbNewProfile() {
+      const name = (prompt(`新建一个 ${wbScopeLabel(wbScope)} 的世界书配置档，名字：`) || '').trim();
+      if (!name) return;
+      if ((WB_PROFILES || []).some(p => p.name === name)) {
+        if (!confirm('已经有叫「' + name + '」的配置档了。\n要覆盖它吗？')) return;
+      }
+      try {
+        const r = await fetch('/api/world_book/profiles', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scope: wbScope || 'main', name: name })
+        });
+        const d = await r.json();
+        if (d.status !== 'ok') throw new Error(d.message || '新建失败');
+        await wbLoadProfiles(name);
+        wbProfileMsg('已新建：' + name, true);
+      } catch (e) { wbProfileMsg(e.message, false); }
+    }
+
+    async function wbRenameProfile() {
+      const sel = document.getElementById('wbProfileSel');
+      const old = sel ? sel.value : '';
+      if (!old) { wbProfileMsg('先选一个配置档', false); return; }
+      const nw = (prompt('把「' + old + '」改名成：', old) || '').trim();
+      if (!nw || nw === old) return;
+      try {
+        const r = await fetch('/api/world_book/profiles/rename', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scope: wbScope || 'main', old: old, new: nw })
+        });
+        const d = await r.json();
+        if (d.status !== 'ok') throw new Error(d.message || '重命名失败');
+        await wbLoadProfiles(nw);
+        wbProfileMsg('已重命名：' + old + ' → ' + nw, true);
+      } catch (e) { wbProfileMsg(e.message, false); }
+    }
+
+    async function wbDeleteProfile() {
+      const sel = document.getElementById('wbProfileSel');
+      const name = sel ? sel.value : '';
+      if (!name) { wbProfileMsg('先选一个配置档', false); return; }
+      if (!confirm('删除配置档「' + name + '」？\n当前正在用的世界书不受影响。')) return;
+      try {
+        const r = await fetch('/api/world_book/profiles/' + encodeURIComponent(name)
+                              + '?scope=' + encodeURIComponent(wbScope || 'main'), { method: 'DELETE' });
+        const d = await r.json();
+        if (d.status !== 'ok') throw new Error(d.message || '删除失败');
+        await wbLoadProfiles('');
+        wbProfileMsg('已删除：' + name, true);
+      } catch (e) { wbProfileMsg(e.message, false); }
     }
 
     async function saveConfigurationApi() {

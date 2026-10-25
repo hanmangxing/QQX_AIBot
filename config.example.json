@@ -4,6 +4,7 @@
   "llm_model": "gpt-4o-mini",
   "temperature": 0.7,
   "llm_profiles": [],
+  "wb_profiles": {},
   "notebook_enabled": true,
   "notebook_inject": true,
   "notebook_top_k": 3,

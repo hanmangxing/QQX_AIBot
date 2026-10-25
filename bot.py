@@ -1432,7 +1432,11 @@ class OneBotClient:
                 self.ws = None
                 if not self.is_running:
                     break
-                await self.log("ERROR", f"WebSocket 异常 ({e})，3 秒后自动重试...")
+                _u = str(url or "")
+                if "access_token=" in _u:
+                    _h, _, _t = _u.partition("access_token=")
+                    _u = _h + "access_token=" + ((_t[:2] + "****") if _t else "****")
+                await self.log("ERROR", f"WebSocket 异常 ({e})，连接地址 {_u}，3 秒后自动重试...")
                 await asyncio.sleep(3)
 
     async def _process_private_chat(self, user_id: int, sender_name: str, message_text: str,

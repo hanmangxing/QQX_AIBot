@@ -369,8 +369,13 @@ def snowluma_ws_autofix(url: str) -> str:
     tok = str(info.get("token") or "")
     if not tok:
         return u
-    from urllib.parse import quote
-    return "%s%saccess_token=%s" % (u, "&" if "?" in u else "?", quote(tok, safe=""))
+    # 规范成 ws://host:port/<path>?access_token=... ：SnowLuma 的 wsServers path 是 "/"，
+    # 少了这个斜杠它会把请求当成别的路径处理
+    from urllib.parse import urlsplit, urlunsplit, quote
+    sp = urlsplit(u)
+    q = (sp.query + "&") if sp.query else ""
+    return urlunsplit((sp.scheme, sp.netloc, sp.path or "/",
+                       q + "access_token=" + quote(tok, safe=""), ""))
 
 
 def active_ws_url() -> str:

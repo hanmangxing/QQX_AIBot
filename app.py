@@ -318,11 +318,66 @@ def napcat_mode() -> bool:
     return protocol_backend() == "napcat"
 
 
+def _snowluma_dirs() -> list:
+    """SnowLuma 可能的安装目录（用来读它自己生成的 OneBot 配置）。"""
+    out = []
+    raw = str(current_config.get("snowluma_cmd") or "").strip().strip('"')
+    if raw:
+        out.append(os.path.dirname(raw) if os.path.isfile(raw) else raw)
+    here = os.path.dirname(os.path.abspath(__file__))
+    out += [os.path.join("C:\\ai", "SnowLuma"),
+            os.path.join(os.path.dirname(here), "SnowLuma"),
+            os.path.join(here, "SnowLuma")]
+    res, seen = [], set()
+    for d in out:
+        d = str(d or "").strip()
+        if d and d not in seen and os.path.isdir(d):
+            seen.add(d); res.append(d)
+    return res
+
+
+def snowluma_ws_info() -> dict:
+    """从 SnowLuma 自己的配置里读正向 WS 服务（networks.wsServers[0]）的端口与 access_token。"""
+    import glob as _glob
+    for _d in _snowluma_dirs():
+        try:
+            _fs = sorted(_glob.glob(os.path.join(_d, "config", "onebot_*.json")),
+                         key=os.path.getmtime, reverse=True)
+        except Exception:
+            continue
+        for _p in _fs:
+            try:
+                with io.open(_p, encoding="utf-8") as _f:
+                    _j = json.load(_f)
+                _ws = ((_j.get("networks") or {}).get("wsServers") or [])
+                if _ws and isinstance(_ws[0], dict):
+                    _s = _ws[0]
+                    return {"file": _p, "port": int(_s.get("port") or 0),
+                            "path": str(_s.get("path") or "/"),
+                            "token": str(_s.get("accessToken") or "")}
+            except Exception:
+                continue
+    return {}
+
+
+def snowluma_ws_autofix(url: str) -> str:
+    """SnowLuma 模式：地址里没带 access_token 就自动从它自己的配置里补上。"""
+    u = str(url or "").strip()
+    if not u or "access_token=" in u:
+        return u
+    info = snowluma_ws_info()
+    tok = str(info.get("token") or "")
+    if not tok:
+        return u
+    from urllib.parse import quote
+    return "%s%saccess_token=%s" % (u, "&" if "?" in u else "?", quote(tok, safe=""))
+
+
 def active_ws_url() -> str:
     """按协议端取 OneBot 正向 WS 地址。"""
     if napcat_mode():
         return str(current_config.get("napcat_ws_url") or "ws://127.0.0.1:3001")
-    return str(current_config.get("snowluma_ws_url") or "ws://127.0.0.1:3001")
+    return snowluma_ws_autofix(str(current_config.get("snowluma_ws_url") or "ws://127.0.0.1:3001"))
 
 
 def _napcat_guard(action: str):
@@ -2690,6 +2745,15 @@ async def _ka_boot():
 @app.get("/api/protocol")
 async def api_protocol_get():
     """当前协议端状态：谁在用、地址、启动脚本、进程在不在跑。"""
+    if protocol_backend() == "snowluma":
+        _raw = str(current_config.get("snowluma_ws_url") or "")
+        _fix = snowluma_ws_autofix(_raw)
+        if _fix and _fix != _raw:
+            current_config["snowluma_ws_url"] = _fix
+            try:
+                save_config(current_config)
+            except Exception:
+                pass
     return {"status": "ok", "protocol": protocol_backend(), "ws_url": active_ws_url(),
             "napcat_ws_url": current_config.get("napcat_ws_url", ""),
             "snowluma_ws_url": current_config.get("snowluma_ws_url", ""),

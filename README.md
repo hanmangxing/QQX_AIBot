@@ -1,8 +1,8 @@
 # QQX_AIBot
 
-**一个自托管、一次部署就能用的 QQ AI 伴侣。**
+**QQ星，一个自托管、一次部署就能用的 QQ AI 伴侣。**
 
-这不是又一个机器人开发框架——框架这块已经有 AstrBot、NoneBot2 做得很好。QQX_AIBot 想做的是把「陪伴感」直接做成产品：部署完就有记忆、有情绪、会主动找你说话，不用自己一个个拼插件。
+前言：如果你是酒馆玩家，这个项目你能很快上手，你可以把你喜欢的角色直接放进QQ里全天候互动，你也可以自己把喜欢的预设和世界书写在里面，并且使用Gemini模型，你懂的。同时有外审拦截保驾护航，自动重roll，但预设需要加群拿(见安装文档)。只需部署并配置，就可以直接享受文生图与表情包等高互动，有人味的全面体验。这不是又一个机器人开发框架——框架这块已经有 AstrBot、NoneBot2 做得很好。QQX_AIBot 的定位是酒馆与AstrBot中间，做第一个把番茄和鸡蛋炒在一起的项目，想做的是把「陪伴感」直接做成产品：部署完就有记忆、有情绪、会主动找你说话，不用自己一个个拼插件。
 
 ## 它解决什么问题
 
@@ -17,14 +17,14 @@ QQX_AIBot 把这些打包成一套可运行的整体：**协议端保活 + 多�
 ## 主要能力
 
 ### 部署与运行
-- 一键启动：双击 `一键启动.bat`，自动安装依赖（清华源）并拉起服务
+- 一键启动：双击 `一键启动.bat`，自动安装依赖并拉起服务
 - WebUI 控制台：浏览器里配 API、人设、各项开关，不用改代码
 - 双协议端：NapCat / SnowLuma 可切换，支持自动启停与保活
 - 依赖极轻：`fastapi`、`uvicorn`、`aiohttp`、`websockets`、`pydantic`
 
 ### 对话与人格
 - 多套 API 档案（`llm_profiles`）：不同 key / 模型随时切换，OpenAI 兼容接口（Gemini、DeepSeek 等均可）
-- 人设、风格预设、世界书，注入层级可调
+- 人设、风格预设、世界书，注入层级可调；世界书支持**按数据源分别存多套配置档**（主 Bot 与群聊模式各自独立、互不影响），选中即切换，改完自动保存
 - 时间注入、思考链剥离
 - 群聊独立链路：群规则、群内人格、静默标记、呼叫模式（@ 或关键词触发）
 
@@ -61,6 +61,8 @@ QQX_AIBot 把这些打包成一套可运行的整体：**协议端保活 + 多�
 3. **配置**：启动后控制台会自动打开，在「API 配置」里填模型 key
 4. **接协议端**：按 NapCat / SnowLuma 的说明登录 QQ，填入 WebSocket 地址与 token
 
+> 📖 **图文安装教程**（保姆级，含 24 张截图，从装 Python 到握手成功）：[`docs/安装教程.md`](docs/安装教程.md)；想要 PDF 版见 [Releases](../../releases)。
+
 > `config.json` 由程序首次运行时自动生成，**不要**提交或外传——它含密钥，已在 `.gitignore` 中。所有可配置项的键名见 `config.example.json`。
 
 ## 目录结构
@@ -83,7 +85,9 @@ QQX_AIBot 把这些打包成一套可运行的整体：**协议端保活 + 多�
 | `secretary.py` | 群聊秘书网关 |
 | `keepalive.py` | 协议端保活 |
 | `start.py` / `一键启动.bat` | 启动入口（自动装依赖） |
+| `snowluma_token.py` | 自动读取 SnowLuma 的 accessToken（省去手填令牌） |
 | `config.example.json` | 配置键名清单 |
+| `docs/安装教程.md` | 图文安装教程 |
 | `预设_自检.py` | 前端预设自检脚本 |
 
 ## 隐私
@@ -96,7 +100,7 @@ QQX_AIBot 把这些打包成一套可运行的整体：**协议端保活 + 多�
 
 | 参考项目 | 作者 | 借鉴的设计 |
 | --- | --- | --- |
-| [LittleWhiteBox](https://github.com/RT15548/LittleWhiteBox) | biex | 长期记忆的分层思路（逐楼锚点 / 结构化事件 / 多路混合召回）；Apache-2.0（许可证在仓库 `docs/LICENSE.md`，另附一条署名要求） |
+| [LittleWhiteBox](https://github.com/RT15548/LittleWhiteBox) | biex | 长期记忆的分层思路（逐楼锚点 / 结构化事件 / 多路混合召回） |
 | [astrbot_plugin_stealer](https://github.com/nagatoquin33/astrbot_plugin_stealer) | nagatoquin33 | 表情包偷取流程设计 |
 | [astrbot_plugin_debounce](https://github.com/advent259141/astrbot_plugin_debounce) | advent259141 | 消息防抖判定思路 |
 | [astrbot_dg_lab_plugin](https://github.com/RC-CHN/astrbot_dg_lab_plugin) | RC-CHN | 郊狼（DG-LAB）连接功能设计 |
@@ -107,7 +111,6 @@ QQX_AIBot 把这些打包成一套可运行的整体：**协议端保活 + 多�
 
 Based on LittleWhiteBox by biex
 
-> 上面这行不是客套话：LittleWhiteBox 的 `docs/LICENSE.md` 在 Apache-2.0 之外另附了一条署名要求——引用、修改或分发其项目文件时，必须在文档、README 或致谢里按这个格式标出原作者 biex。
 
 ## 免责声明
 

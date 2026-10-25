@@ -129,3 +129,9 @@ AGPL-3.0。Copyright (c) 2026 QQX_AIBot
 ## 更新
 
 `git pull` 即可。`config.json` 与数据目录都不在版本控制里，更新不会覆盖你的配置和数据。
+
+## 支持作者
+
+如果这个项目帮到了你，可以请作者喝杯奶茶 🥛（纯自愿，不影响任何功能与更新）。
+
+<img src="docs/images/赞赏码.jpeg" width="200" alt="赞赏码">

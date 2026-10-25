@@ -15,7 +15,7 @@ def check_and_install_requirements():
     print("   QQX_AIBot // OneBot v11 原生 AI 伴侣控制台启动器")
     print("   版本 v%s" % __version__)
     print("=" * 60)
-    print("[1/3] 正在检查依赖包...")
+    print("[1/2] 正在检查依赖包...")
     
     needed = ["fastapi", "uvicorn", "aiohttp", "websockets", "pydantic"]
     missing = []
@@ -51,25 +51,6 @@ def check_and_install_requirements():
         print("所有依赖包已就绪！")
 
 
-def create_desktop_shortcut():
-    try:
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        bat_path = os.path.join(current_dir, "一键启动.bat")
-        
-        ps_code = f"""
-        $ws = New-Object -ComObject WScript.Shell
-        $desktop = [System.Environment]::GetFolderPath('Desktop')
-        $shortcut = $ws.CreateShortcut((Join-Path $desktop 'QQ AI伴侣控制台.lnk'))
-        $shortcut.TargetPath = '{bat_path}'
-        $shortcut.WorkingDirectory = '{current_dir}'
-        $shortcut.Description = 'QQ AI伴侣一键启动控制台'
-        $shortcut.Save()
-        """
-        subprocess.run(["powershell", "-NoProfile", "-Command", ps_code], capture_output=True)
-    except Exception:
-        pass
-
-
 def open_browser():
     # 不要抢在 uvicorn 前面开浏览器：后台线程轮询端口，真的通了再弹
     def _open_when_ready(url, tries=120):
@@ -94,10 +75,7 @@ def open_browser():
 if __name__ == "__main__":
     check_and_install_requirements()
     
-    print("[2/3] 正在检查桌面快捷方式...")
-    create_desktop_shortcut()
-
-    print("[3/3] 正在启动后台控制台并自动打开浏览器...")
+    print("[2/2] 正在启动后台控制台并自动打开浏览器...")
     print("控制台访问地址: http://127.0.0.1:8090 (避开 ComfyUI 8000 端口)")
     print("NapCat 工作路径: C:\\ai\\NapCat.Shell.Windows.Node\\napcat.bat")
     print("-" * 60)

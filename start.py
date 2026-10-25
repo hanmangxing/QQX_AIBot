@@ -28,11 +28,24 @@ def check_and_install_requirements():
     if missing:
         print(f"检测到缺少依赖: {', '.join(missing)}，正在自动安装...")
         req_path = os.path.join(os.path.dirname(__file__), "requirements.txt")
-        cmd = [sys.executable, "-m", "pip", "install", "-r", req_path, "-i", "https://pypi.tuna.tsinghua.edu.cn/simple"]
+        cmd = [sys.executable, "-m", "pip", "install", "-r", req_path, "--prefer-binary",
+               "-i", "https://pypi.org/simple"]
         ret = subprocess.call(cmd)
         if ret != 0:
-            print("清华源安装受阻，尝试使用默认官方源...")
-            subprocess.call([sys.executable, "-m", "pip", "install", "-r", req_path])
+            print("官方源安装失败，尝试国内镜像...")
+            ret = subprocess.call([sys.executable, "-m", "pip", "install", "-r", req_path,
+                                   "--prefer-binary", "-i", "https://pypi.tuna.tsinghua.edu.cn/simple"])
+        if ret != 0:
+            print("=" * 62)
+            print("  依赖安装失败，已停止启动。")
+            print("  常见原因：pip 源上没有你所用 Python 版本的预编译包，")
+            print("  退化成源码编译又缺少编译器（Microsoft Visual C++ Build Tools）。")
+            print("  可手动重试：")
+            print('    "{EXE}" -m pip install -r "{REQ}" -i https://pypi.org/simple'.format(
+                EXE=sys.executable, REQ=req_path))
+            print("  或改装 Python 3.12 / 3.13（预编译包覆盖最全）后重新运行。")
+            print("=" * 62)
+            sys.exit(1)
         print("依赖安装完成！")
     else:
         print("所有依赖包已就绪！")

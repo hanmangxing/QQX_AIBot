@@ -1,6 +1,7 @@
 ﻿QQX_AIBot v1.0.0 —— 首次使用三步
 
-1. 装 Python 3.10 或更高版本（python.org 下载，安装时勾上 "Add Python to PATH"）
+1. 装 Python 3.12 或 3.13（python.org 下载，安装时务必勾上 "Add Python to PATH"）
+   —— 别用太新的版本，有些依赖还没有对应的预编译包，会卡在编译上
 2. 解压到一个不含中文、不含空格的路径，例如 D:\QQX_AIBot
 3. 双击 一键启动.bat —— 它会自动安装依赖、启动服务、并打开控制台（http://127.0.0.1:8090）
 

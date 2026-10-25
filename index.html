@@ -4005,7 +4005,7 @@
 
     <!-- 底部状态栏 -->
     <div class="p-3 bg-[#0d1117] border-t border-borderDark flex items-center justify-between text-[11px]">
-      <span class="text-gray-400">修改后请点击右上角或此处的“保存设定”</span>
+      <span class="text-gray-400">改动会自动保存（停手约 1 秒），也可以点右上角或此处的“保存设定”</span>
       <button onclick="saveWorldBookUI()" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs transition">
         保存全部设定
       </button>
@@ -5072,8 +5072,18 @@
     // ---------------- 世界书与角色设定集 (World Book) ----------------
     let worldBookEntries = [];
 
+    // 自动保存：新增/切状态传 0（立即），改文字走防抖（停手约 1 秒存一次，避免每敲一个字打一次接口）
+    let wbSaveTimer = null;
+    function wbAutoSave(delay) {
+      if (wbSaveTimer) { clearTimeout(wbSaveTimer); wbSaveTimer = null; }
+      if (delay === 0) { saveWorldBookUI(true); return; }
+      wbSaveTimer = setTimeout(() => { wbSaveTimer = null; saveWorldBookUI(true); },
+                               delay === undefined ? 900 : delay);
+    }
+
     async function fetchWorldBook() {
       try {
+        if (wbSaveTimer) { clearTimeout(wbSaveTimer); wbSaveTimer = null; }   // 拉取前丢弃排队的自动保存
         const res = await fetch('/api/world_book');
         const data = await res.json();
         worldBookEntries = data.entries || [];
@@ -5263,6 +5273,7 @@
       if (worldBookEntries[idx]) {
         worldBookEntries[idx][field] = val;
         updateWorldBookStats();
+        wbAutoSave();     // 改文字：防抖自动保存
       }
     }
 
@@ -5271,6 +5282,7 @@
         worldBookEntries[idx].status = status;
         renderWorldBookCards();
         updateWorldBookStats();
+        wbAutoSave(0);    // 切蓝/绿/关灯：立即保存
       }
     }
 
@@ -5286,6 +5298,7 @@
       worldBookEntries.unshift(newEntry);
       renderWorldBookCards();
       updateWorldBookStats();
+      wbAutoSave(0);      // 新增条目：立即保存
       setTimeout(() => {
         const firstInput = document.querySelector('#wbCard_0 input');
         if (firstInput) firstInput.focus();
@@ -5367,9 +5380,9 @@
       }
     }
 
-    async function saveWorldBookUI() {
+    async function saveWorldBookUI(quiet) {
       try {
-        appendLog('INFO', '正在保存世界书与角色设定集...');
+        if (!quiet) appendLog('INFO', '正在保存世界书与角色设定集...');
         const res = await fetch('/api/world_book', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -5377,9 +5390,9 @@
         });
         const data = await res.json();
         if (res.ok) {
-          appendLog('SUCCESS', `世界书设定已成功保存并热重载（当前共 ${worldBookEntries.length} 条）`);
+          if (!quiet) appendLog('SUCCESS', `世界书设定已成功保存并热重载（当前共 ${worldBookEntries.length} 条）`);
           updateWorldBookStats();
-          const btns = document.querySelectorAll('#viewWorldBook button[onclick="saveWorldBookUI()"]');
+          const btns = quiet ? [] : document.querySelectorAll('#viewWorldBook button[onclick="saveWorldBookUI()"]');
           btns.forEach(btn => {
             const orig = btn.innerHTML;
             btn.innerHTML = '<span>已保存 ✓</span>';
@@ -6555,6 +6568,8 @@
       if (typeof scopeSet === 'function') await scopeSet(sc, false);
     }
     async function wbScopeSet(sc) {
+      // 切数据源前先把还没落盘的改动存到当前数据源，避免写错地方
+      if (wbSaveTimer) { clearTimeout(wbSaveTimer); wbSaveTimer = null; await saveWorldBookUI(true); }
       const r = await tabScopeSet('wb', sc);
       wbScope = (sc === 'claude') ? 'claude' : 'main';
       await wbLoadProfiles();   // 每个数据源各自一套配置档，切档就换列表

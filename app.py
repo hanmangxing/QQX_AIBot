@@ -3958,6 +3958,13 @@ async def api_update_apply():
         try:
             _upd_git("fetch", "--tags", "--prune", timeout=90)
             rp = _upd_git("pull", "--ff-only", timeout=120)
+            if rp.returncode:
+                # 没有上游分支时（例如刚加完 origin、还没 push -u），显式指定 origin <branch> 再试
+                br = (_upd_git("rev-parse", "--abbrev-ref", "HEAD", timeout=15).stdout or "").strip()
+                if br and br != "HEAD":
+                    rp2 = _upd_git("pull", "--ff-only", "origin", br, timeout=120)
+                    if rp2.returncode == 0:
+                        rp = rp2
         except Exception as e:
             if stashed:
                 _upd_git("stash", "pop", timeout=30)
@@ -3965,8 +3972,13 @@ async def api_update_apply():
         if rp.returncode:
             if stashed:
                 _upd_git("stash", "pop", timeout=30)
+            _err = ((rp.stderr or rp.stdout or "").strip())[:300]
+            if re.search(r"couldn't find remote ref|no such ref|Could not find remote branch", _err):
+                _err = "远端还没有你要拉取的分支——你还没把代码推上去（git push -u origin main）"
+            elif re.search(r"not a git repository", _err):
+                _err = "这里不是 git 仓库，请手动下载新版本覆盖"
             return {"status": "error", "before": before, "stashed": False,
-                    "msg": "拉取失败：%s" % ((rp.stderr or rp.stdout or "").strip()[:300])}
+                    "msg": "拉取失败：%s" % _err}
         after = (_upd_git("rev-parse", "--short", "HEAD", timeout=15).stdout or "").strip()
         changed = before != after
         return {"status": "ok", "before": before, "after": after, "changed": changed,

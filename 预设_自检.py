@@ -981,6 +981,8 @@ ck("更新：设置页显示当前版本", "updCur" in H and "updateCardInit" in
 
 ck("更新：支持 GitLab", "api/v4/projects" in A and "gitlab" in A)
 
+ck("更新：没有上游分支时兜底", "显式指定 origin" in A and "abbrev-ref" in A)
+
 print("\n%s  PASS %d / FAIL %d" % ("[预设自检]", P, F))
 sys.exit(1 if F else 0)
 

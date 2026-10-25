@@ -3819,6 +3819,7 @@ def _upd_remote_url():
 
 
 def _upd_repo():
+    # 远端 owner/repo：优先 version.REPO，其次 config 的 update_repo，最后从 origin 推断（不限域名）
     try:
         from version import REPO as _R
     except Exception:
@@ -3826,8 +3827,51 @@ def _upd_repo():
     r = str(_R or current_config.get("update_repo") or "").strip()
     if r:
         return r
-    m = re.search(r"(?:github\.com|gitee\.com)[/:]([^/]+/[^/\s]+?)(?:\.git)?/?$", _upd_remote_url())
+    m = re.search(r"^(?:https?://|ssh://|git@)([^/:]+)[/:](.+?)(?:\.git)?/?$", _upd_remote_url())
+    if not m:
+        return ""
+    parts = [p for p in m.group(2).split("/") if p]
+    return "/".join(parts[-2:]) if len(parts) >= 2 else ""
+
+
+def _upd_host():
+    m = re.search(r"^(?:https?://|ssh://|git@)([^/:]+)", _upd_remote_url())
     return m.group(1) if m else ""
+
+
+def _upd_platform():
+    # github / gitee / gitlab：优先 version.PLATFORM 或 config，其次按域名猜
+    try:
+        from version import PLATFORM as _P
+    except Exception:
+        _P = ""
+    p = str(_P or current_config.get("update_platform") or "").strip().lower()
+    if p:
+        return p
+    h = _upd_host().lower()
+    if "gitlab" in h:
+        return "gitlab"
+    if "gitee" in h:
+        return "gitee"
+    return "github"
+
+
+def _upd_api_url(plat, repo, host):
+    from urllib.parse import quote
+    host = host or {"gitlab": "gitlab.com", "gitee": "gitee.com"}.get(plat, "github.com")
+    if plat == "gitlab":
+        return "https://%s/api/v4/projects/%s/releases?per_page=1" % (host, quote(repo, safe=""))
+    if plat == "gitee":
+        return "https://gitee.com/api/v5/repos/%s/releases/latest" % repo
+    return "https://api.github.com/repos/%s/releases/latest" % repo
+
+
+def _upd_tags_url(plat, repo, host):
+    from urllib.parse import quote
+    if plat == "gitlab":
+        return "https://%s/api/v4/projects/%s/repository/tags?per_page=1" % (host, quote(repo, safe=""))
+    return ""
+
 
 
 def _upd_platform():
@@ -3858,8 +3902,8 @@ async def api_update_check():
                 "msg": "还没配置远端仓库：在 config.json 里填 update_repo（形如 用户名/仓库名），"
                        "或先给本地仓库加一个 origin。"}
     plat = _upd_platform()
-    url = ("https://gitee.com/api/v5/repos/%s/releases/latest" % repo) if plat == "gitee" \
-        else ("https://api.github.com/repos/%s/releases/latest" % repo)
+    host = _upd_host()
+    url = _upd_api_url(plat, repo, host)
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as sess:
             async with sess.get(url, headers={"User-Agent": "QQX_AIBot-update-check",
@@ -3870,15 +3914,37 @@ async def api_update_check():
                             "msg": "远端还没有发布任何版本（打完第一个 tag 并发布 Release 之后就能检查到）。"}
                 if resp.status != 200:
                     return {"status": "error", "current": cur,
-                            "msg": "远端返回 HTTP %s（仓库名写对了吗？私有仓库需要 token，不支持）" % resp.status}
+                            "msg": "远端返回 HTTP %s（%s 上的仓库名写对了吗？私有仓库需要 token，不支持）" % (resp.status, plat)}
                 data = await resp.json()
     except Exception as e:
         return {"status": "error", "current": cur, "msg": "连不上 %s：%s" % (plat, e)}
-    latest = str(data.get("tag_name") or data.get("name") or "").strip()
+    if plat == "gitlab":
+        rels = data if isinstance(data, list) else []
+        if rels:
+            rel = rels[0]
+            latest = str(rel.get("tag_name") or "").strip()
+            notes = (rel.get("description") or "")[:600]
+            web = "https://%s/%s/-/releases/%s" % (host, repo, latest)
+        else:
+            # 只打了 tag、还没建 Release：退一步用 tag 名，也能提示到
+            t = _upd_git("ls-remote", "--tags", "--refs", "origin", timeout=30).stdout or ""
+            tags = re.findall(r"refs/tags/(\S+)", t)
+            latest = tags[-1] if tags else ""
+            notes = ""
+            web = "https://%s/%s/-/tags" % (host, repo)
+            if latest:
+                notes = "（远端只有 tag，还没建 Release）"
+    else:
+        latest = str(data.get("tag_name") or data.get("name") or "").strip()
+        notes = (data.get("body") or "")[:600]
+        web = data.get("html_url") or ""
     has = bool(latest) and _upd_ver(latest) > _upd_ver(cur)
+    if not latest:
+        return {"status": "ok", "current": cur, "latest": "", "has_update": False,
+                "repo": repo, "platform": plat,
+                "msg": "远端还没有发布任何版本（打完 tag 并发布 Release 之后就能检查到）。"}
     return {"status": "ok", "current": cur, "latest": latest, "has_update": has,
-            "repo": repo, "platform": plat, "url": data.get("html_url") or "",
-            "notes": (data.get("body") or "")[:600],
+            "repo": repo, "platform": plat, "url": web, "notes": notes,
             "msg": ("发现新版本 %s" % latest) if has else "已经是最新版本"}
 
 

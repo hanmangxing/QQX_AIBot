@@ -15,5 +15,5 @@ __version__ = "1.0.0"
 # 一般不用填；仓库有多个远端、或想固定检查地址时再填。
 REPO = ""
 
-# 平台：留空时按远端域名自动判断（github.com -> github，gitee.com -> gitee）。
-PLATFORM = ""
+# 平台：留空时按远端域名自动判断（github.com / gitee.com / gitlab.com 均自动识别）。
+PLATFORM = ""    # 可选值：github / gitee / gitlab（自建 GitLab 请填 gitlab）

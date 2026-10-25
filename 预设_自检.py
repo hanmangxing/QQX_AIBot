@@ -979,6 +979,8 @@ ck("更新：前端有检查更新按钮", "updateCheck()" in H and "updCheckBtn
 ck("更新：前端有立即更新按钮", "updateApply()" in H and "updApplyBtn" in H)
 ck("更新：设置页显示当前版本", "updCur" in H and "updateCardInit" in H)
 
+ck("更新：支持 GitLab", "api/v4/projects" in A and "gitlab" in A)
+
 print("\n%s  PASS %d / FAIL %d" % ("[预设自检]", P, F))
 sys.exit(1 if F else 0)
 

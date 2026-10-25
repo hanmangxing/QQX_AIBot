@@ -279,6 +279,17 @@
             <input id="autoStartSnowlumaCheck" type="checkbox" onchange="toggleAutoStartSnowluma(this.checked)" class="accent-emerald-500 w-4 h-4">
             <span class="text-xs text-gray-400">打开网页自动启动 SnowLuma</span>
           </label>
+          <!-- Token 自动拉取：安装地址按左下角「启动命令」反推，accessToken 自动回填到 WS 输入框 -->
+          <div class="flex items-center gap-2 text-xs font-mono">
+            <span class="text-gray-400 shrink-0">WebUI 密码</span>
+            <input id="snowlumaWebuiPwd" type="password" autocomplete="new-password" placeholder="接口兜底拉 Token 时才需要" class="flex-1 bg-terminal border border-borderDark focus:border-cyan-500 rounded px-2 py-1 text-gray-200 outline-none">
+            <button onclick="slTokenSave()" class="px-3 py-1 bg-cyan-700 hover:bg-cyan-600 text-white rounded text-xs transition">保存</button>
+          </div>
+          <label class="flex items-center gap-1.5 cursor-pointer">
+            <input id="snowlumaTokenAuto" type="checkbox" class="accent-emerald-500 w-4 h-4">
+            <span class="text-xs text-gray-400">自动拉取并回填 OneBot Token</span>
+          </label>
+          <div id="slTokenMsg" class="text-[11px] font-mono text-gray-400"></div>
         </div>
       </div>
 
@@ -3740,7 +3751,7 @@
         <div class="mb-3.5 rounded-lg border border-cyan-900/60 bg-cyan-950/20 p-3">
           <div class="flex items-center gap-2 flex-wrap">
             <span class="text-gray-300 text-xs">💾 配置档</span>
-            <select id="llmProfileSel" class="bg-terminal border border-borderDark focus:border-cyan-500 rounded-lg px-2 py-1 text-gray-200 outline-none text-xs font-mono min-w-[200px]">
+            <select id="llmProfileSel" onchange="llmApplyProfile()" class="bg-terminal border border-borderDark focus:border-cyan-500 rounded-lg px-2 py-1 text-gray-200 outline-none text-xs font-mono min-w-[200px]">
               <option value="">-- 还没有保存的配置档 --</option>
             </select>
             <button type="button" onclick="llmApplyProfile()" class="px-3 py-1 rounded bg-cyan-900/60 border border-cyan-700 text-cyan-100 text-xs hover:bg-cyan-800/60">切换到这套</button>
@@ -4134,6 +4145,10 @@
         if (_su) _su.value = cfg.snowluma_ws_url || '';
         const _sc = document.getElementById('snowlumaCmd');
         if (_sc) _sc.value = cfg.snowluma_cmd || '';
+        const _pw2 = document.getElementById('snowlumaWebuiPwd');
+        if (_pw2) _pw2.value = cfg.snowluma_webui_password || '';
+        const _ta3 = document.getElementById('snowlumaTokenAuto');
+        if (_ta3) _ta3.checked = cfg.snowluma_token_auto !== false;
 
         // 如果配置了 URL 和 Key，自动静默拉取一次可用模型
         if (cfg.llm_base_url && cfg.llm_api_key) {
@@ -10559,6 +10574,10 @@ async function setLoad() {
     if (_su) _su.value = c.snowluma_ws_url || '';
     const _sc = document.getElementById('snowlumaCmd');
     if (_sc) _sc.value = c.snowluma_cmd || '';
+    const _pw = document.getElementById('snowlumaWebuiPwd');
+    if (_pw) _pw.value = c.snowluma_webui_password || '';
+    const _ta2 = document.getElementById('snowlumaTokenAuto');
+    if (_ta2) _ta2.checked = c.snowluma_token_auto !== false;
   } catch (e) { }
 }
 async function setSave() {
@@ -10593,6 +10612,19 @@ async function snowlumaRefresh() {
     }
     const ob = document.getElementById('slOnebotState');
     if (ob) ob.textContent = (j.onebot_host || '127.0.0.1') + ':' + (j.onebot_port || 3001) + (j.onebot_ready ? '（已监听）' : '（未监听：登录 QQ 后才开）');
+    // 左下角「SnowLuma WS 端口」自动回填：把它的 accessToken 一并带进来（用户不用手抄）
+    const wsu = document.getElementById('snowlumaWsUrl');
+    if (wsu && j.ws_url && document.activeElement !== wsu && wsu.value !== j.ws_url) wsu.value = j.ws_url;
+    if (ob && j.token_ready) ob.textContent += ' · Token 已回填';
+    const ta = document.getElementById('snowlumaTokenAuto');
+    if (ta) ta.checked = j.token_auto !== false;
+    const tm = document.getElementById('slTokenMsg');
+    if (tm) {
+      tm.textContent = j.token_ready
+        ? ('Token 已就绪 · 来源：' + (j.token_source || '—') + (j.token_uin ? ' · QQ ' + j.token_uin : ''))
+        : ('未取到 Token · 当前安装目录：' + (j.snowluma_dir || '—') + '（改左下角「启动命令」即可换地址）');
+      tm.className = 'text-[11px] font-mono ' + (j.token_ready ? 'text-emerald-400' : 'text-amber-400');
+    }
     // 保活状态
     const ke = document.getElementById('slKaEnabled');
     if (ke) ke.checked = j.keepalive !== false;
@@ -10605,6 +10637,21 @@ async function snowlumaRefresh() {
     }
     return j;
   } catch (e) { return null; }
+}
+async function slTokenSave() {
+  const o = document.getElementById('slTokenMsg');
+  const pwd = (document.getElementById('snowlumaWebuiPwd') || {}).value || '';
+  const auto = !!(document.getElementById('snowlumaTokenAuto') || {}).checked;
+  try {
+    const r = await (await fetch('/api/snowluma/token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ webui_password: pwd, token_auto: auto }) })).json();
+    if (o) {
+      o.textContent = r.message || (r.status === 'ok' ? '已保存' : '保存失败');
+      o.className = 'text-[11px] font-mono ' + (r.status === 'ok' ? 'text-emerald-400' : 'text-rose-400');
+    }
+    await snowlumaRefresh();
+  } catch (e) {
+    if (o) { o.textContent = '保存失败：' + e.message; o.className = 'text-[11px] font-mono text-rose-400'; }
+  }
 }
 async function snowlumaOpenWebUI() {
   let url = '';

@@ -6,6 +6,7 @@ import zlib
 import base64
 import time
 import logging
+import io
 import os
 import subprocess
 from pathlib import Path
@@ -22,6 +23,12 @@ from memory import EmbeddingClient, MEMORY_KIND_LABEL
 
 # 生图（ComfyUI）：工作流管理 + 出图
 import comfyui as COMFY
+
+# SnowLuma 协议端：安装目录推导 + OneBot accessToken 自动拉取（纯标准库，独立模块避免循环依赖）
+try:
+    import snowluma_token as _SLT
+except Exception:      # 模块缺失时不影响主程序启动
+    _SLT = None
 
 # 初始化日志
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -42,9 +49,9 @@ DEFAULT_CONFIG = {
     "notebook_inject_chars": 300,    # 每条笔记注入时的预览字数
     "notebook_tools_enabled": True,  # 注册 4 个 LLM 工具（让 AI 自己记笔记/回忆）
     "notebook_tools_mode": "inline",
-    "jailbreak_tool_name": "game_content",
+    "jailbreak_tool_name": "",
     "llm_preset_id": "",              # 当前生效的破限预设 id（空=用第一套）
-    "llm_presets": [],                # 破限预设列表（首次打开预设页签时自动写入内置两套）
+    "llm_presets": [],                # 破限预设列表（由使用者自行新增或导入 JSON）
     "style_preset_id": "",            # 当前生效的文风预设 id（空=用第一套）
     "style_presets": [],
     # 群聊模式自己的一套预设（和主 Bot 完全独立）
@@ -151,12 +158,18 @@ DEFAULT_CONFIG = {
     "napcat_ws_url": "ws://127.0.0.1:3001",
     "napcat_cmd": r"C:\ai\NapCat.Shell.Windows.Node\napcat.bat",
     # ---- 协议端：napcat（默认，QQX_AIBot 托管进程+保活）/ snowluma（空协议模式，只连 OneBot）----
-    "qq_protocol": "napcat",
+    "qq_protocol": "snowluma",
     "snowluma_ws_url": "ws://127.0.0.1:3001",
     # SnowLuma 的启动脚本路径（切到 SnowLuma 时由 QQX_AIBot 拉起；空协议模式下不管登录/保活）
     "snowluma_cmd": r"C:\ai\SnowLuma\launcher.bat",
     "snowluma_keepalive": True,     # SnowLuma 进程保活：进程掉了自动拉起（对齐 NapCat 保活）
     "snowluma_ka_interval": 30,     # SnowLuma 保活检测间隔（秒）
+    # SnowLuma 安装目录：留空则按上面「启动命令」的路径自动反推（换安装地址不用改代码）
+    "snowluma_dir": "",
+    # OneBot accessToken 自动拉取：先读 SnowLuma 的 config/onebot_<uin>.json，读不到再走它自带 WebUI 的接口
+    "snowluma_token_auto": True,
+    "snowluma_webui_password": "",  # SnowLuma 自带 WebUI 的登录密码（仅「接口兜底」这条路线需要）
+    "snowluma_webui_session": "",   # SnowLuma WebUI 会话 Token（自动缓存，不用手填）
     "jailbreak_enabled": True,
     "payload_jailbreak": True,
     "depth_injection": True,
@@ -319,112 +332,74 @@ def napcat_mode() -> bool:
 
 
 def _snowluma_dirs() -> list:
-    """SnowLuma 目录候选：以「启动命令」填写的位置为准，不写死任何绝对路径。"""
+    """SnowLuma 可能的安装目录（用来读它自己生成的 OneBot 配置）。"""
     out = []
-    raw = str(current_config.get("snowluma_cmd") or "").strip()
+    raw = str(current_config.get("snowluma_cmd") or "").strip().strip('"')
     if raw:
-        toks = [t for t in raw.replace('"', " ").split() if (os.path.sep in t or "/" in t)] or [raw]
-        for tok in toks:
-            p = os.path.abspath(os.path.expandvars(os.path.expanduser(tok.strip('"'))))
-            if os.path.isfile(p):
-                p = os.path.dirname(p)
-            for d in (p, os.path.dirname(p)):
-                if d and os.path.isdir(d) and d not in out:
-                    out.append(d)
-    for base in (os.path.dirname(os.path.abspath(__file__)),
-                 os.path.dirname(os.path.dirname(os.path.abspath(__file__)))):
-        for name in ("SnowLuma", "snowluma"):
-            d = os.path.join(base, name)
-            if os.path.isdir(d) and d not in out:
-                out.append(d)
-    return out
+        out.append(os.path.dirname(raw) if os.path.isfile(raw) else raw)
+    here = os.path.dirname(os.path.abspath(__file__))
+    out += [os.path.join("C:\\ai", "SnowLuma"),
+            os.path.join(os.path.dirname(here), "SnowLuma"),
+            os.path.join(here, "SnowLuma")]
+    res, seen = [], set()
+    for d in out:
+        d = str(d or "").strip()
+        if d and d not in seen and os.path.isdir(d):
+            seen.add(d); res.append(d)
+    return res
 
 
-def _iter_json_nodes(obj):
-    """递归遍历 json，产出 (层级路径, 字典节点)。"""
-    if isinstance(obj, dict):
-        yield "", obj
-        for k, v in obj.items():
-            for sub, node in _iter_json_nodes(v):
-                yield (str(k) + ("." + sub if sub else "")), node
-    elif isinstance(obj, list):
-        for i, v in enumerate(obj):
-            for sub, node in _iter_json_nodes(v):
-                yield (str(i) + ("." + sub if sub else "")), node
-
-
-def _node_token(node) -> str:
-    """取访问令牌，键名兼容 accessToken / access_token / token。"""
-    for k, v in (node or {}).items():
-        if isinstance(v, str) and v.strip() and re.fullmatch(r"access_?token|token", str(k), re.I):
-            return v.strip()
-    return ""
-
-
-def snowluma_ws_info(url: str = "") -> dict:
-    """读 SnowLuma 配置里的正向 WS 端口与 access_token。
-
-    不假设文件名、不假设层级：在 SnowLuma 目录下遍历 json 找带令牌的节点，
-    优先取端口与当前地址一致的那条，其次取层级里带 ws 的那条。
-    """
+def snowluma_ws_info() -> dict:
+    """从 SnowLuma 自己的配置里读正向 WS 服务（networks.wsServers[0]）的端口与 access_token。"""
     import glob as _glob
-    try:
-        _want = int(urlsplit(str(url)).port or 0)
-    except Exception:
-        _want = 0
-    hits = []
-    for d in _snowluma_dirs():
-        files = []
-        for pat in (os.path.join(d, "config", "**", "*.json"), os.path.join(d, "**", "*.json")):
+    for _d in _snowluma_dirs():
+        try:
+            _fs = sorted(_glob.glob(os.path.join(_d, "config", "onebot_*.json")),
+                         key=os.path.getmtime, reverse=True)
+        except Exception:
+            continue
+        for _p in _fs:
             try:
-                files += _glob.glob(pat, recursive=True)
-            except Exception:
-                pass
-        files = [f for f in set(files)
-                 if not re.search(r"[\\/](node_modules|\.git|cache|logs?)[\\/]", f, re.I)]
-        files.sort(key=lambda x: os.path.getmtime(x) if os.path.exists(x) else 0, reverse=True)
-        for f in files[:12]:
-            try:
-                with io.open(f, encoding="utf-8") as h:
-                    j = json.load(h)
+                with io.open(_p, encoding="utf-8") as _f:
+                    _j = json.load(_f)
+                _ws = ((_j.get("networks") or {}).get("wsServers") or [])
+                if _ws and isinstance(_ws[0], dict):
+                    _s = _ws[0]
+                    return {"file": _p, "port": int(_s.get("port") or 0),
+                            "path": str(_s.get("path") or "/"),
+                            "token": str(_s.get("accessToken") or "")}
             except Exception:
                 continue
-            for path, node in _iter_json_nodes(j):
-                tok = _node_token(node)
-                if not tok:
-                    continue
-                pv = node.get("port")
-                hits.append({"file": f, "path": path, "token": tok,
-                             "port": int(pv) if str(pv or "").isdigit() else 0,
-                             "ws_path": str(node.get("path") or "/"), "path_": str(node.get("path") or "/"),
-                             "is_ws": bool(re.search(r"ws|websocket", path, re.I))})
-        if hits:
-            break
-    if not hits:
-        return {}
-    if _want:
-        for h in hits:
-            if h["port"] == _want:
-                return h
-    for h in hits:
-        if h["is_ws"]:
-            return h
-    return hits[0]
+    # 文件里没读到（比如 SnowLuma 还没落盘 OneBot 配置）-> 退回它自带 WebUI 的接口兜底
+    if _SLT is not None and current_config.get("snowluma_token_auto", True):
+        try:
+            _w = _SLT.from_webui(current_config)
+        except Exception:
+            _w = {}
+        if _w.get("ws_token"):
+            return {"file": "", "port": int(_w.get("ws_port") or 0),
+                    "path": "/", "token": str(_w.get("ws_token") or ""),
+                    "source": "WebUI 接口", "uin": str(_w.get("uin") or "")}
+    return {}
 
 
 def snowluma_ws_autofix(url: str) -> str:
-    """SnowLuma 的 WS 地址没带 access_token 时，从它自己的配置里补上。"""
+    """SnowLuma 模式：把地址补成带最新 access_token 的形式。"""
     u = str(url or "").strip()
-    if not u or "access_token=" in u:
+    if not u:
         return u
-    tok = str(snowluma_ws_info(u).get("token") or "").strip()
+    info = snowluma_ws_info()
+    tok = str(info.get("token") or "")
     if not tok:
         return u
-    from urllib.parse import urlsplit, urlunsplit, quote
+    # 规范成 ws://host:port/<path>?access_token=... ：SnowLuma 的 wsServers path 是 "/"，
+    # 少了这个斜杠它会把请求当成别的路径处理。
+    # 每次都按刚读到的 token 重写：SnowLuma 换过 token 时，地址里的旧 token 会被替换掉。
+    from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
     sp = urlsplit(u)
-    q = (sp.query + "&") if sp.query else ""
-    return urlunsplit((sp.scheme, sp.netloc, sp.path or "/",
-                       q + "access_token=" + quote(tok, safe=""), ""))
+    q = [(k, v) for k, v in parse_qsl(sp.query, keep_blank_values=True) if k != "access_token"]
+    q.append(("access_token", tok))
+    return urlunsplit((sp.scheme, sp.netloc, sp.path or "/", urlencode(q), ""))
 
 
 def active_ws_url() -> str:
@@ -3233,9 +3208,9 @@ def _proto_cmd(p: str) -> str:
 
 
 def _proto_ws_url(p: str) -> str:
-    """协议端的 OneBot WS 地址。"""
+    """协议端的 OneBot WS 地址（SnowLuma 自动补 access_token）。"""
     if p == "snowluma":
-        return str(current_config.get("snowluma_ws_url") or "").strip() or "ws://[filtered: mount info]:3001"
+        return snowluma_ws_autofix(str(current_config.get("snowluma_ws_url") or "").strip() or "ws://[filtered: mount info]:3001")
     return str(current_config.get("napcat_ws_url") or "").strip() or "ws://[filtered: mount info]:3001"
 
 
@@ -3459,14 +3434,17 @@ def snowluma_webui_url() -> str:
     QQX_AIBot 才连得上——所以这里给它一个可直接跳转的入口。
     """
     _port, _host = 5099, "127.0.0.1"
-    try:
-        _cfg = json.loads(Path(r"C:\ai\SnowLuma\config\runtime.json").read_text(encoding="utf-8")) or {}
-        _port = int(_cfg.get("webuiPort") or 5099)
-        _h = str(_cfg.get("webuiHost") or "").strip()
-        if _h and _h not in ("0.0.0.0", "::", "::0"):
-            _host = _h
-    except Exception:
-        pass
+    # 安装目录不写死：按控制台左下角填的「SnowLuma 启动命令」反推（换安装地址不用改代码）
+    for _d in _snowluma_dirs():
+        try:
+            _cfg = json.loads((Path(_d) / "config" / "runtime.json").read_text(encoding="utf-8")) or {}
+            _port = int(_cfg.get("webuiPort") or 5099)
+            _h = str(_cfg.get("webuiHost") or "").strip()
+            if _h and _h not in ("0.0.0.0", "::", "::0"):
+                _host = _h
+            break
+        except Exception:
+            continue
     return "http://%s:%d" % (_host, _port)
 
 
@@ -3490,13 +3468,25 @@ async def api_snowluma_webui():
         _webup = await _wait_tcp("127.0.0.1", _wport, timeout=1.0)
     except Exception:
         pass
+    # Token：SnowLuma 的 OneBot 网络默认开鉴权，这里把它配置里的 accessToken 拉出来一并回填
+    _tk = {}
+    try:
+        _tk = _SLT.tokens(current_config) if _SLT else {}
+    except Exception:
+        _tk = {}
     return {"status": "ok", "url": _wurl,
             "running": bool(_webup or (snowluma_process and snowluma_process.returncode is None)),
             "onebot_ready": _onebot, "onebot_host": _h, "onebot_port": _p,
             "keepalive": bool(current_config.get("snowluma_keepalive", True)),
             "ka_interval": int(current_config.get("snowluma_ka_interval") or 30),
             "ka_restarts": int(_sl_ka_state.get("restarts", 0)),
-            "ka_running": _sl_ka_state.get("running")}
+            "ka_running": _sl_ka_state.get("running"),
+            "snowluma_dir": _SLT.snowluma_dir(current_config) if _SLT else "",
+            "ws_url": snowluma_ws_autofix(str(current_config.get("snowluma_ws_url") or "")),
+            "token_ready": bool(_tk.get("ws_token") or _tk.get("http_token")),
+            "token_source": _tk.get("source") or "",
+            "token_uin": _tk.get("uin") or "",
+            "token_auto": bool(current_config.get("snowluma_token_auto", True))}
 
 
 @app.post("/api/snowluma/start")
@@ -3518,6 +3508,42 @@ async def api_snowluma_stop():
         _r = await stop_snowluma()
         await log_publisher("INFO", "[SnowLuma] " + str((_r or {}).get("message", "")))
         return {"status": "ok", "result": _r}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/snowluma/token")
+async def api_snowluma_token_set(body: dict = Body(...)):
+    """保存 SnowLuma Token 自动拉取的设置（WebUI 密码 / 开关），并立即试拉一次。
+
+    安装目录不写死：由控制台左下角填的「SnowLuma 启动命令」反推，所以换安装地址
+    只要改那个输入框，不用动代码。
+    """
+    try:
+        _b = body or {}
+        if "webui_password" in _b:
+            current_config["snowluma_webui_password"] = str(_b.get("webui_password") or "")
+            current_config["snowluma_webui_session"] = ""      # 密码变了，旧会话作废
+        if "token_auto" in _b:
+            current_config["snowluma_token_auto"] = bool(_b.get("token_auto"))
+        save_config(current_config)
+        _tk = {}
+        try:
+            _tk = _SLT.tokens(current_config, force=True) if _SLT else {}
+        except Exception:
+            _tk = {}
+        _ok = bool(_tk.get("ws_token") or _tk.get("http_token"))
+        _dir = _SLT.snowluma_dir(current_config) if _SLT else ""
+        if _ok:
+            _msg = "已保存并取到 Token（来源：%s%s）" % (
+                _tk.get("source") or "-",
+                ("，QQ " + str(_tk.get("uin"))) if _tk.get("uin") else "")
+        else:
+            _msg = ("已保存，但没取到 Token。当前认定的安装目录：%s —— 请确认左下角「SnowLuma 启动命令」"
+                    "指向它的安装目录（或填它的 WebUI 密码走接口兜底）" % (_dir or "-"))
+        await log_publisher("INFO" if _ok else "WARN", "[SnowLuma] Token 拉取：" + _msg)
+        return {"status": "ok", "token_ready": _ok, "token_source": _tk.get("source") or "",
+                "dir": _dir, "message": _msg}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -3861,12 +3887,11 @@ def _style_list() -> list:
 
 
 def _preset_list() -> list:
+    """出厂不带任何破限预设：列表为空就保持为空，不再自动写回内置预设。"""
     ps = current_config.get("llm_presets")
-    if not isinstance(ps, list) or not ps:
-        ps = _preset_builtins()
+    if not isinstance(ps, list):
+        ps = []
         current_config["llm_presets"] = ps
-        if not str(current_config.get("llm_preset_id") or "").strip():
-            current_config["llm_preset_id"] = ps[0]["id"]
         _preset_flush()
     return ps
 

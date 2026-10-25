@@ -257,7 +257,16 @@ def webui_api(path, body, timeout=10):
 
 
 def onebot_http_port():
-    """\u4ece onebot11_*.json \u627e HTTP server \u7aef\u53e3\u4e0e token"""
+    """从协议端配置里找 HTTP server 端口与 token（SnowLuma: onebot_<uin>.json / NapCat: onebot11_*.json）"""
+    # SnowLuma 的字段是 accessToken、且没有 enable 开关（跟 NapCat 的 onebot11_*.json 不同），
+    # 统一交给 snowluma_token 处理；它读不到时再走下面的 NapCat 逻辑
+    try:
+        import snowluma_token as _slt
+        _d = _slt.tokens()
+        if _d.get("http_token"):
+            return (int(_d.get("http_port") or 3000), str(_d.get("http_token")))
+    except Exception:
+        pass
     best = None
     try:
         for f in sorted((NAP / "napcat" / "config").glob("onebot11_*.json")):
@@ -288,7 +297,9 @@ def ob_call(action, params=None, timeout=8):
 def onebot_ws_port():
     """从 config.json 的 napcat_ws_url 取 OneBot WS 端口"""
     try:
-        u = str(json.loads(CONFIG_JSON.read_text(encoding="utf-8")).get("napcat_ws_url") or "")
+        _c = json.loads(CONFIG_JSON.read_text(encoding="utf-8"))
+        _key = "snowluma_ws_url" if str(_c.get("qq_protocol") or "").strip().lower() == "snowluma" else "napcat_ws_url"
+        u = str(_c.get(_key) or "")
         m = re.search(r":(\d+)", u)
         if m:
             return int(m.group(1))

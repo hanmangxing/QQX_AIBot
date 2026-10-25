@@ -20,38 +20,17 @@ def ck(name, cond, extra=""):
 import bot
 
 bs = bot.preset_builtins()
-ck("内置两套预设", len(bs) == 2, len(bs))
-cat, whale = bs[0], bs[1]
-ck("小猫之神 id/工具", cat["id"] == "cat_god" and cat["tool_name"] == "game_content")
-ck("小鲸之神 id/工具", whale["id"] == "whale_god" and whale["tool_name"] == "whale_content")
-ck("仓库不自带预设正文（body/bypass/recency 全空）",
-   not (cat["body"] or cat["bypass"] or cat["recency"]) and not (whale["body"] or whale["bypass"] or whale["recency"]),
-   (len(cat["body"]), len(whale["body"])))
-ck("小鲸之神工具名换成 whale_content", whale["tool_name"] == "whale_content" and "game_content" not in whale["tool_name"])
-ck("小鲸之神无残留猫/喵", ("猫" not in whale["body"] + whale["bypass"] + whale["recency"] + whale["tfe"]),
-   repr([c for c in "猫喵" if c in whale["body"] + whale["bypass"] + whale["recency"] + whale["tfe"]]))
-ck("小鲸之神名字还在（正文留给使用者导入）", "小鲸之神" in str(whale.get("name") or ""))
-
-ck("小鲸之神无 SoliUmbra", "SoliUmbra" not in (whale["tfe"] + whale["body"] + whale["bypass"] + whale["recency"] + whale["desc"]))
-ck("仓库不带模型卡名 Balaena", "Balaena" not in (whale["tfe"] + whale["body"] + whale["bypass"] + whale["recency"]))
-ck("仓库不带 SoliUmbra", "SoliUmbra" not in (cat["tfe"] + cat["body"] + cat["bypass"] + cat["recency"]))
-
-ck("仓库不带内置思维链标签（wu）", "think_wu~" not in whale["body"])
-ck("仓库不带内置思维链标签（nya）", "think_nya~" not in cat["body"])
-_r1 = bot.sanitize_reply("<think_wu~>想了很久</think_wu~>正文一")
-ck("小鲸之神标签能剥掉、正文保留", _r1 == "正文一", repr(_r1))
-_r2 = bot.sanitize_reply("<content><think_nya~>喵</think_nya~>正文二</content>")
-ck("小猫之神标签能剥掉、正文保留", _r2 == "正文二", repr(_r2))
-_r3 = bot.sanitize_reply("<think_wu~>漏了闭合 正文三")
-ck("漏闭合也不会把思维链漏给用户", _r3 == "", repr(_r3))
-_r4 = bot.sanitize_reply("<think>普通思维链</think>正文四")
-ck("老 <think> 标签照旧能剥", _r4 == "正文四", repr(_r4))
-ck("两套主体为空（正文靠导入）", cat["body"] == "" and whale["body"] == "", (len(cat["body"]), len(whale["body"])))
-ck("两套工具说明不空", bool(cat["tool_desc"]) and bool(cat["tool_arg_desc"]))
-
+ck("仓库不预置破限预设：内置两套已移除", len(bs) == 0, len(bs))
+ck("仓库不自带破限正文常量（recency 为空）", not getattr(bot, "JAILBREAK_RECENCY", ""))
+ck("仓库不携带内置预设常量", not hasattr(bot, "JAILBREAK_PRESETS"))
+_ap = io.open("app.py", encoding="utf-8").read()
+ck("预设默认值为空列表", '"llm_presets": []' in _ap)
+ck("预设由使用者自行导入（不再自动写入）", "自动写入" not in _ap and "内置两套" not in _ap)
+cat = {"id": "cat_god", "name": "小猫之神", "tool_name": "game_content", "body": "", "bypass": "", "recency": "", "tfe": "", "desc": "", "tool_desc": "d", "tool_arg_desc": "a"}
+whale = {"id": "whale_god", "name": "小鲸之神", "tool_name": "whale_content", "body": "", "bypass": "", "recency": "", "tfe": "", "desc": "", "tool_desc": "d", "tool_arg_desc": "a"}
 # ---------- 2. 当前预设的取值 ----------
-cfg_cat = {"llm_presets": bs, "llm_preset_id": "cat_god"}
-cfg_whale = {"llm_presets": bs, "llm_preset_id": "whale_god"}
+cfg_cat = {"llm_presets": [cat, whale], "llm_preset_id": "cat_god"}
+cfg_whale = {"llm_presets": [cat, whale], "llm_preset_id": "whale_god"}
 ck("按 id 取到小猫之神", bot._preset_name(cfg_cat) == "小猫之神")
 ck("按 id 取到小鲸之神", bot._preset_name(cfg_whale) == "小鲸之神")
 _cfa = {"llm_presets": [{"id": "a", "name": "A", "body": "AAA", "recency": "RA", "tfe": "TA"},
@@ -65,8 +44,8 @@ t2 = bot._preset_tool(cfg_whale)["function"]
 ck("工具定义跟随预设", t1["name"] == "game_content" and t2["name"] == "whale_content", (t1["name"], t2["name"]))
 ck("工具 schema 完整", t2["parameters"]["properties"]["content"]["type"] == "string"
    and t2["parameters"]["required"] == ["content"])
-ck("空配置回落到小猫之神", bot._preset_name({}) == "小猫之神")
-ck("坏 id 回落到第一套", bot._preset_name({"llm_presets": bs, "llm_preset_id": "nope"}) == "小猫之神")
+ck("空配置不回落任何预设", bot._preset_name({}) == "")
+ck("坏 id 不回落第一套", bot._preset_name({"llm_presets": [cat, whale], "llm_preset_id": "nope"}) == "")
 cfg_custom = {"llm_presets": [{"id": "x", "name": "自写", "tool_name": "my_tool",
                                "tool_desc": "d", "tool_arg_desc": "a", "body": "b"}], "llm_preset_id": "x"}
 ck("自定义工具名生效", bot._preset_tool(cfg_custom)["function"]["name"] == "my_tool")
@@ -103,7 +82,7 @@ for act in ("activate", "delete", "duplicate", "reset"):
     ck("接口支持 %s" % act, '"%s"' % act in A)
 ck("配置键 llm_presets", '"llm_presets": []' in A)
 ck("配置键 llm_preset_id", '"llm_preset_id": ""' in A)
-ck("首次自动写入内置", "_preset_builtins()" in A and "current_config[\"llm_presets\"] = ps" in A)
+ck("不再自动写入内置预设", "_preset_builtins()" not in A and "current_config[\"llm_presets\"] = ps" not in A)
 ck("保存后同步给 bot", "bot_client.update_config(current_config)" in A)
 ck("至少留一套预设", "至少留一套预设" in A)
 

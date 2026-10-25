@@ -1171,7 +1171,7 @@ class ClaudeGroupMode:
         return self._preset_part("bypass")
 
     def _preset_tool_def(self):
-        """预设要求的正文工具定义（whale_content / game_content）。"""
+        """预设要求的正文工具定义（工具名随预设走）。"""
         if not self._preset_on():
             return None
         try:

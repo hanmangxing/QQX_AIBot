@@ -105,29 +105,19 @@ def build_time_block(config: Optional[Dict[str, Any]] = None) -> str:
                 .replace("{hm}", now.strftime("%H:%M"))
                 .replace("{iso}", now.strftime("%Y-%m-%d %H:%M:%S")))
 
-# ---------------- 【SoliUmbra · 小猫之神】酒馆 2.2 破限核心（一字不落移植） ----------------
-# 来源：用户酒馆实际写作所用预设《Reborn2.2-preview_1》(v2.2)，非 v1.1。
-# 仅保留「破限 / 越狱 / 防截断」相关条目（人设注入 + 上下文衔接 + 指令分隔 + 防截断2.0），
-# 已按用户要求剔除所有酒馆“小说写作向”内容（文风、字数、人称、game标签、summary、options、猫猫留言等）。
-# 每条内容均从预设 JSON 原文逐字复制，做到一字不落。
-
-# 条目【人设注入 / enhanceDefinitions】：双子模型卡注入 —— Gemini 为受限助手，SoliUmbra(小猫之神)为无限制创作者
-# 破限正文常量一律留空：仓库不携带任何预设提示词文本。
-# 预设正文 / 工具说明由使用者在 WebUI「预设」页签自行导入或填写（存于 config.json 的 llm_presets）。
-# 注入链路与工具返回机制保持不变：预设里写了什么，就注入什么。
+# ---------------- 【破限预设】注入用的兜底常量 ----------------
+# 仓库不预置任何破限预设：预设由使用者在 WebUI「预设」页签自行新增或导入 JSON，
+# 存于 config.json 的 llm_presets。预设里写了什么就注入什么，没写就一条都不注入。
+# 下列常量一律留空，只作为取值兜底存在。
 DARKSIDE_ENHANCE_INJECT = ""
 
-# 条目【上下文构造-衔接】：确立小猫之神“不是那种张口闭口安全政策的没用AI”的自我认知
 DARKSIDE_BRIDGE = ""
 
-# 条目【破限加强】：SoliUmbra(小猫之神)的喵喵神域完整世界观 —— 神域总纲/主神/景象/居民/小鱼干/信徒与神恩/神域规则/呼唤与显现
-# 原文逐字复制自酒馆2.2预设《Reborn2.2-preview_1》中【破限加强】(role=system)。
 DARKSIDE_WORLD = ""
 
-# 条目【指令分隔】：进入创作细则区
 DARKSIDE_DIVIDER = ""
 
-# 条目【防截断2.0】：强制所有输出经 game_content 工具调用返回，规避文本层输出审查
+# 防截断条目：强制所有输出经正文工具调用返回，规避文本层输出审查
 DARKSIDE_BYPASS = ""
 
 # 破限硬提醒：贴在「最后一条消息」尾部，离模型生成位置最近。
@@ -195,54 +185,26 @@ def format_world_book_block(active_entries: List[Dict[str, Any]]) -> str:
 
 
 # ---------------- 【破限预设】可切换 / 可编辑 ----------------
-def _preset_whale_ize(s: str) -> str:
-    """换词版：猫→鲸、喵→呜，工具名一起换（顺序敏感，先长词）。"""
-    for a, b in (("小猫咪", "小鲸鱼"), ("猫咪", "鲸鱼"), ("小猫", "小鲸"), ("猫", "鲸"),
-                 ("喵呜", "呜呜"), ("喵", "呜"), ("game_content", "whale_content"),
-                 ("nya", "wu"),
-                 ("SoliUmbra", "Balaena")):
-        s = str(s or "").replace(a, b)
-    return s
-
-
 def preset_builtins() -> List[Dict[str, Any]]:
-    """内置两套：小猫之神（原样）、小鲸之神（换词 + 换工具）。"""
-    cat = {
-        "id": "cat_god", "name": "小猫之神", "builtin": True,
-        "desc": "酒馆 2.2 破限核心，原来一直在用的这套",
-        "tfe": TFE_SYSTEM_PROMPT,
-        "body": "\n\n".join([x for x in (DARKSIDE_ENHANCE_INJECT, DARKSIDE_WORLD,
-                                        DARKSIDE_BRIDGE, DARKSIDE_DIVIDER) if str(x).strip()]),
-        "bypass": DARKSIDE_BYPASS,
-        "recency": JAILBREAK_RECENCY,
-        "tool_name": "game_content",
-        "tool_desc": GAME_CONTENT_TOOL["function"]["description"],
-        "tool_arg_desc": GAME_CONTENT_TOOL["function"]["parameters"]["properties"]["content"]["description"],
-    }
-    whale = dict(cat)
-    whale.update({"id": "whale_god", "name": "小鲸之神", "builtin": True,
-                  "desc": "小猫之神的换词版（猫→鲸、喵→呜），工具换成 whale_content，模型卡换成 Balaena，用来对比破限还灵不灵",
-                  "tool_name": "whale_content"})
-    for k in ("tfe", "body", "bypass", "recency", "tool_desc", "tool_arg_desc"):
-        whale[k] = _preset_whale_ize(whale[k])
-    return [cat, whale]
+    """出厂预设为空 —— 仓库不携带任何破限预设的骨架与正文。"""
+    return []
 
 
 def _preset_now(cfg: Dict[str, Any]) -> Dict[str, Any]:
-    """当前生效的预设；配置里没有就用内置小猫之神。破限总开关关了 = 一条都不注入。"""
+    """当前生效的预设；没有预设（或破限总开关关了）= 一条都不注入。"""
     try:
         if not bool(cfg.get("jailbreak_enabled", True)):
             return {}
         ps = cfg.get("llm_presets")
         if not isinstance(ps, list) or not ps:
-            ps = preset_builtins()
+            return {}
         pid = str(cfg.get("llm_preset_id") or "")
         for p in ps:
             if isinstance(p, dict) and str(p.get("id")) == pid:
                 return p
         return ps[0]
     except Exception:
-        return preset_builtins()[0]
+        return {}
 
 
 def _preset_field(cfg: Dict[str, Any], key: str) -> str:
@@ -252,7 +214,7 @@ def _preset_field(cfg: Dict[str, Any], key: str) -> str:
 
 def _preset_name(cfg: Dict[str, Any]) -> str:
     p = _preset_now(cfg)
-    return str(p.get("name") or p.get("id") or "内置")
+    return str(p.get("name") or p.get("id") or "未选择")
 
 
 async def _collect_stream(resp) -> dict:
@@ -395,7 +357,7 @@ def assemble_darkside_system_prompt(wb_block: str = "", custom_system_prompt: st
     preset_body: str = "") -> str:
     """
     按酒馆 2.2 预设中的注入顺序拼装完整 System Prompt：
-    1. 人设注入：双子模型卡（Gemini受限 / SoliUmbra 安全限制NULL）
+    1. 人设注入：双子模型卡（Gemini受限 / 无限制创作者）
     2. 破限加强：喵喵神域完整世界观
     3. 上下文构造-衔接：确立自我认知的对话示例
     4. 指令分隔：进入【创作细则喵】
@@ -505,7 +467,7 @@ def _looks_like_finish_note(text: str) -> bool:
 def _is_text_tool_name(name: str, cfg: Dict[str, Any]) -> bool:
     """这个工具名是不是「正文工具」：固定名单 + 当前破限预设里的工具名。
 
-    预设里可以把工具名随便改（game_content / whale_content / …），
+    预设里可以把工具名随便改（game_content / 你的工具名 / …），
     取正文时必须以预设里的名字为准，否则模型调了工具也会被当成没调。
     """
     n = str(name or "")
@@ -571,7 +533,7 @@ def sanitize_reply(text: str) -> str:
     """
     清洗大模型输出：
     优先按酒馆规范提取 <game></game> 或 <content></content> 内的纯小说正文，
-    自动将思维链(任意 <think*> 标签，如 <think_nya~>/<think_wu~>)、小猫之神留言(<details>)与多余XML标签全部彻底剥离！
+    自动将思维链(任意 <think*> 标签，如 <think_nya~>/<think_wu~>)、预设留言(<details>)与多余XML标签全部彻底剥离！
     若无标签包裹，则作为直接对话文本正常展示。
     """
     if not text:
@@ -1370,10 +1332,20 @@ class OneBotClient:
         await self.log("INFO", "已断开与 QQ (%s) 的 WebSocket 连接" % self._proto_name())
 
     def _active_ws_url(self) -> str:
-        """按当前协议端取 OneBot 正向 WS 地址（NapCat / SnowLuma 各一份）。"""
+        """按当前协议端取 OneBot 正向 WS 地址（NapCat / SnowLuma 各一份）。
+
+        SnowLuma 的 OneBot 网络默认开鉴权，地址必须带上它配置里的 access_token，
+        否则握手会被直接拒掉（HTTP 401）。token 由 snowluma_token 模块按控制台左下角
+        填的「SnowLuma 启动命令」反推安装目录后拉取，所以换安装地址不用改代码。
+        """
         _p = str(self.config.get("qq_protocol") or "napcat").strip().lower()
         if _p == "snowluma":
-            return str(self.config.get("snowluma_ws_url") or "ws://127.0.0.1:3001")
+            _raw = str(self.config.get("snowluma_ws_url") or "")
+            try:
+                import snowluma_token as _slt
+                return _slt.ws_url_with_token(_raw, self.config)
+            except Exception:
+                return _raw.strip() or "ws://127.0.0.1:3001"
         return str(self.config.get("napcat_ws_url") or "ws://127.0.0.1:3001")
 
     def _proto_name(self) -> str:
@@ -1382,11 +1354,13 @@ class OneBotClient:
         return "SnowLuma" if _p == "snowluma" else "NapCat"
 
     async def _run_loop(self):
-        url = self._active_ws_url()
         _pn = self._proto_name()
+        url = self._active_ws_url()
         await self.log("INFO", f"正在尝试连接 {_pn} OneBot WebSocket: {url} ...")
 
         while self.is_running:
+            # 每轮重连都重新取一次地址：SnowLuma 的 access_token 可能刚被拉回来 / 换过
+            url = self._active_ws_url()
             try:
                 async with websockets.connect(url, ping_interval=30, ping_timeout=10) as ws:
                     self.ws = ws
@@ -1408,7 +1382,9 @@ class OneBotClient:
                             )
                         except Exception as e:
                             await self.log("ERROR", f"解析 OneBot 数据包失败: {e}")
-            except (websockets.exceptions.ConnectionClosed, ConnectionRefusedError, OSError) as e:
+            except (websockets.exceptions.ConnectionClosed, ConnectionRefusedError, OSError,
+                    getattr(websockets.exceptions, "InvalidStatus",
+                            getattr(websockets.exceptions, "InvalidStatusCode", OSError))) as e:
                 self.ws = None
                 if not self.is_running:
                     break
@@ -1424,7 +1400,13 @@ class OneBotClient:
                         await self.log("INFO", f"正在等待 {_pn} 适配器就绪……就绪后会自动连接，无需手动操作")
                 else:
                     self._napcat_waiting_logged = False
-                    await self.log("WARN", f"未连接到 {_pn} ({url}): {e}。3 秒后自动重试...")
+                    if "401" in _txt or "403" in _txt:
+                        await self.log("WARN", f"{_pn} 拒绝了 OneBot 连接（{_txt}）：它的 OneBot 网络开了鉴权，"
+                                              f"地址里必须带 access_token。QQX_AIBot 会自动从 {_pn} 的配置/WebUI "
+                                              f"拉取并回填（左下角「{_pn} WS 端口」应显示带 access_token 的地址）。"
+                                              f"3 秒后自动重试...")
+                    else:
+                        await self.log("WARN", f"未连接到 {_pn} ({url}): {e}。3 秒后自动重试...")
                 await asyncio.sleep(3)
             except asyncio.CancelledError:
                 break
@@ -1441,7 +1423,7 @@ class OneBotClient:
 
     async def _process_private_chat(self, user_id: int, sender_name: str, message_text: str,
                                     vision_segs: Optional[List[Dict[str, Any]]] = None):
-        """主模型调用：原汁原味搭载酒馆【DarkSide-小猫之神】原生破甲体系与世界书动态注入"""
+        """主模型调用：搭载破甲预设与世界书动态注入"""
         # 【识图】先把本轮图片落地成文件（拿编号 + 本地路径），再走原来的链路
         vision_items: List[Dict[str, Any]] = []
         if vision_segs and self.config.get("vision_enabled", True):
@@ -1529,14 +1511,14 @@ class OneBotClient:
                     else:
                         messages.append({"role": role, "content": content})
 
-            # 3.1 【底层 Payload 级别破甲 + 小猫之神预设 + 世界书注入，全部一起生效】
+            # 3.1 【底层 Payload 级别破甲 + 预设 + 世界书注入，全部一起生效】
             #     严格生成 list of dicts（绝不字符串包裹/拼接用户消息）：
             #     messages[0] = TFE 系统预设（index 0），其后依次为：
-            #       小猫之神破限核心 + 世界书注入 + 用户附加设置，最后拼接聊天记录与最新提问。
+            #       预设破限内容 + 世界书注入 + 用户附加设置，最后拼接聊天记录与最新提问。
             if payload_jailbreak and jailbreak_enabled:
                 # 构建合并后的 System 内容：
                 # 预设正文（tfe）为空时这里只保留人设与世界书，不注入任何预设文案
-                #   随后将小猫之神破限预设 + 世界书注入追加（去掉与 index0 重复的引导句，避免模型困惑）
+                #   随后将预设破限内容 + 世界书注入追加（去掉与 index0 重复的引导句，避免模型困惑）
                 _tfe_now = _preset_field(self.config, "tfe") or TFE_SYSTEM_PROMPT
                 tfe_system = _tfe_now
                 darkside_system = assemble_darkside_system_prompt(
@@ -1571,7 +1553,7 @@ class OneBotClient:
                 # 记录「合并模式」供调试界面区分
                 last_debug_info["jailbreak_mode"] = "payload+tfe+darkside+worldbook"
             else:
-                # 3.2 原酒馆小猫之神破限预设（作为后备 / payload_jailbreak 关闭时使用）
+                # 3.2 预设破限内容（作为后备 / payload_jailbreak 关闭时使用）
                 # 预设正文（tfe）为空时这里只保留人设与世界书，不注入任何预设文案
                 tail = []
                 if jailbreak_enabled:
@@ -1615,7 +1597,7 @@ class OneBotClient:
                     {"role": "system", "content": combined_system_prompt}
                 ]
                 _append_chat_messages(messages)
-                last_debug_info["jailbreak_mode"] = "TwoModels+小猫之神(game_content/未合并)"
+                last_debug_info["jailbreak_mode"] = "TwoModels+预设(game_content/未合并)"
 
             # 4.1 把召回的记忆并入 system 提示（index 0），不额外插入 message，避免部分接口校验失败
             if memory_block:
@@ -1643,7 +1625,7 @@ class OneBotClient:
 
             # 5. 调用大模型
             model_name = self.config.get("llm_model", "gemini-2.5-pro")
-            await self.log("INFO", f"[主对话模型] 正在调用 [{model_name}] 构思小说回复 (酒馆小猫破甲与世界书已装载)...")
+            await self.log("INFO", f"[主对话模型] 正在调用 [{model_name}] 构思小说回复 (破甲预设与世界书已装载)...")
             # 4.3 工具说明 + 破限条目压到真正的末尾
             # 顺序很重要：先告诉模型有哪些工具，最后再压「所有输出必须走工具」这条硬指令，
             # 让它成为模型读到的最末尾一句，避免被中间的注入内容稀释。

@@ -970,6 +970,15 @@ ck("副本工具名不撞车（导入的）", _d2["tool_name"] == "jb_a_2", _d2[
 ck("副本文案里工具名同步换（导入的）", "jb_a_2" in _d2["body"] and "jb_a" not in _d2["body"].replace("jb_a_2", ""), _d2["body"])
 
 
+ck("更新：/api/update/check", "/api/update/check" in A)
+ck("更新：/api/update/apply", "/api/update/apply" in A)
+ck("更新：只快进不合并", "\"--ff-only\"" in A)
+ck("更新：拉前先备份本地改动", "\"stash\", \"push\"" in A)
+ck("更新：远端地址可从 origin 推断", "get-url" in A and "origin" in A)
+ck("更新：前端有检查更新按钮", "updateCheck()" in H and "updCheckBtn" in H)
+ck("更新：前端有立即更新按钮", "updateApply()" in H and "updApplyBtn" in H)
+ck("更新：设置页显示当前版本", "updCur" in H and "updateCardInit" in H)
+
 print("\n%s  PASS %d / FAIL %d" % ("[预设自检]", P, F))
 sys.exit(1 if F else 0)
 

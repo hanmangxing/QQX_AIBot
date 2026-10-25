@@ -487,6 +487,24 @@
   <main id="viewSettings" class="hidden flex-1 min-h-0 p-4 lg:p-6 max-w-[1800px] w-full mx-auto overflow-hidden">
     <div class="h-full overflow-y-auto">
       <div class="max-w-3xl mx-auto space-y-4">
+          <div class="bg-card border border-borderDark rounded-xl p-5 shadow-lg">
+            <h2 class="text-sm font-bold text-gray-200 mb-1 flex items-center gap-2">
+              <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+              版本与更新
+            </h2>
+            <p class="text-[11px] text-gray-500 mb-4">检查远端仓库有没有新版本，有就直接在这里拉取。只覆盖被版本控制的文件，<span class="text-gray-400">config.json、聊天记录、记忆、贴图库都不会被改动</span>；本地有未提交的改动时会先自动备份。更新完成后需要重启程序才生效。</p>
+            <div class="flex flex-wrap items-center gap-3 text-xs">
+              <span class="text-gray-400">当前版本</span>
+              <span id="updCur" class="font-mono text-emerald-400">-</span>
+              <span id="updLatest" class="font-mono text-gray-400"></span>
+            </div>
+            <div class="mt-4 flex items-center gap-3">
+              <button onclick="updateCheck()" id="updCheckBtn" class="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-xs transition">检查更新</button>
+              <button onclick="updateApply()" id="updApplyBtn" class="px-3 py-1.5 bg-[#21262d] hover:bg-[#30363d] text-gray-300 border border-borderDark rounded text-xs transition">立即更新</button>
+              <span id="updMsg" class="text-[11px] font-mono text-gray-400"></span>
+            </div>
+          </div>
+
 
         <div class="bg-card border border-borderDark rounded-xl p-5 shadow-lg">
           <h2 class="text-sm font-bold text-gray-200 mb-1 flex items-center gap-2">
@@ -7079,6 +7097,7 @@
       if (name === 'chat') { if (typeof fetchHistoryList === 'function') fetchHistoryList(); }
       if (name === 'preset') { try { await tabScopeEnter('preset'); } catch (e) {} presetLoad(); }
       if (name === 'settings') { setLoad(); }
+    updateCardInit();
       if (name === 'apiconfig') { llmLoadProfiles(); blockLoad(); stkLoad(); secLoad(); }   // 识图 / 秘书网关配置也要回填，否则刷新后格子是空的
       if (name === 'soul') soulLoad();
       if (name === 'notebook') nbLoad();
@@ -10971,6 +10990,52 @@ async function presetImport(kind) {
   };
   inp.click();
 }
+
+  // ---------------- 版本与更新 ----------------
+  async function updateCardInit() {
+    try {
+      const d = await (await fetch('/api/version')).json();
+      const el = document.getElementById('updCur');
+      if (el) el.textContent = 'v' + (d.version || '?');
+    } catch (e) { }
+  }
+  function _updSay(t, color) {
+    const el = document.getElementById('updMsg');
+    if (!el) return;
+    el.textContent = t || '';
+    el.className = 'text-[11px] font-mono ' + (color || 'text-gray-400');
+  }
+  async function updateCheck() {
+    const b = document.getElementById('updCheckBtn');
+    if (b) { b.disabled = true; b.textContent = '检查中…'; }
+    _updSay('正在查询远端版本…', 'text-gray-400');
+    try {
+      const d = await (await fetch('/api/update/check')).json();
+      const cur = document.getElementById('updCur');
+      if (cur && d.current) cur.textContent = 'v' + d.current;
+      const lat = document.getElementById('updLatest');
+      if (d.status !== 'ok' || !d.latest) {
+        if (lat) lat.textContent = '';
+        _updSay(d.msg || '检查失败', d.status !== 'ok' ? 'text-red-400' : 'text-gray-400');
+      } else {
+        if (lat) lat.textContent = d.has_update ? ('→ 最新 v' + d.latest) : '（已是最新）';
+        _updSay(d.msg, d.has_update ? 'text-amber-400' : 'text-emerald-400');
+      }
+    } catch (e) { _updSay('检查失败：' + e, 'text-red-400'); }
+    if (b) { b.disabled = false; b.textContent = '检查更新'; }
+  }
+  async function updateApply() {
+    if (!confirm('现在从远端仓库拉取更新？\n\n只会覆盖被版本控制的文件，config.json、聊天记录、记忆、贴图库不受影响。\n更新完成后需要重启程序才会生效。')) return;
+    const b = document.getElementById('updApplyBtn');
+    if (b) { b.disabled = true; b.textContent = '更新中…'; }
+    _updSay('正在拉取…', 'text-gray-400');
+    try {
+      const d = await (await fetch('/api/update/apply', { method: 'POST' })).json();
+      _updSay(d.msg || '完成', d.status === 'ok' ? 'text-emerald-400' : 'text-red-400');
+      if (d.status === 'ok' && d.changed) setTimeout(updateCheck, 800);
+    } catch (e) { _updSay('更新失败：' + e, 'text-red-400'); }
+    if (b) { b.disabled = false; b.textContent = '立即更新'; }
+  }
 </script>
 </body>
 </html>

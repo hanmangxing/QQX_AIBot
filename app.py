@@ -3804,6 +3804,128 @@ async def api_version():
     return {"status": "ok", "version": _v}
 
 
+# ==================== 版本与更新 ====================
+# 远端仓库（owner/repo）：优先 version.REPO，其次 config 的 update_repo，最后从 git remote origin 推断。
+def _upd_git(*args, timeout=60):
+    return subprocess.run(["git"] + list(args), cwd=os.path.dirname(os.path.abspath(__file__)),
+                          capture_output=True, text=True, timeout=timeout)
+
+
+def _upd_remote_url():
+    try:
+        return (_upd_git("remote", "get-url", "origin", timeout=10).stdout or "").strip()
+    except Exception:
+        return ""
+
+
+def _upd_repo():
+    try:
+        from version import REPO as _R
+    except Exception:
+        _R = ""
+    r = str(_R or current_config.get("update_repo") or "").strip()
+    if r:
+        return r
+    m = re.search(r"(?:github\.com|gitee\.com)[/:]([^/]+/[^/\s]+?)(?:\.git)?/?$", _upd_remote_url())
+    return m.group(1) if m else ""
+
+
+def _upd_platform():
+    try:
+        from version import PLATFORM as _P
+    except Exception:
+        _P = ""
+    if _P:
+        return str(_P).strip().lower()
+    return "gitee" if "gitee.com" in _upd_remote_url() else "github"
+
+
+def _upd_ver(s):
+    nums = re.findall(r"\d+", str(s or ""))
+    return tuple(int(x) for x in nums[:3]) or (0,)
+
+
+@app.get("/api/update/check")
+async def api_update_check():
+    # 查远端最新版本（公开仓库不需要 token）
+    try:
+        from version import __version__ as cur
+    except Exception:
+        cur = "unknown"
+    repo = _upd_repo()
+    if not repo:
+        return {"status": "error", "current": cur,
+                "msg": "还没配置远端仓库：在 config.json 里填 update_repo（形如 用户名/仓库名），"
+                       "或先给本地仓库加一个 origin。"}
+    plat = _upd_platform()
+    url = ("https://gitee.com/api/v5/repos/%s/releases/latest" % repo) if plat == "gitee" \
+        else ("https://api.github.com/repos/%s/releases/latest" % repo)
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as sess:
+            async with sess.get(url, headers={"User-Agent": "QQX_AIBot-update-check",
+                                              "Accept": "application/vnd.github+json"}) as resp:
+                if resp.status == 404:
+                    return {"status": "ok", "current": cur, "latest": "", "has_update": False,
+                            "repo": repo, "platform": plat,
+                            "msg": "远端还没有发布任何版本（打完第一个 tag 并发布 Release 之后就能检查到）。"}
+                if resp.status != 200:
+                    return {"status": "error", "current": cur,
+                            "msg": "远端返回 HTTP %s（仓库名写对了吗？私有仓库需要 token，不支持）" % resp.status}
+                data = await resp.json()
+    except Exception as e:
+        return {"status": "error", "current": cur, "msg": "连不上 %s：%s" % (plat, e)}
+    latest = str(data.get("tag_name") or data.get("name") or "").strip()
+    has = bool(latest) and _upd_ver(latest) > _upd_ver(cur)
+    return {"status": "ok", "current": cur, "latest": latest, "has_update": has,
+            "repo": repo, "platform": plat, "url": data.get("html_url") or "",
+            "notes": (data.get("body") or "")[:600],
+            "msg": ("发现新版本 %s" % latest) if has else "已经是最新版本"}
+
+
+@app.post("/api/update/apply")
+async def api_update_apply():
+    # 从远端拉取更新：只动被版本控制的文件；本地有未提交改动时先 stash 备份
+    def _run():
+        r0 = _upd_git("rev-parse", "--short", "HEAD", timeout=15)
+        if r0.returncode:
+            return {"status": "error",
+                    "msg": "这里不是 git 仓库（或没装 git），没法自动更新，请手动下载新版本覆盖。"}
+        before = r0.stdout.strip()
+        stashed = False
+        try:
+            st = _upd_git("status", "--porcelain", timeout=20).stdout or ""
+        except Exception:
+            st = ""
+        dirty = [l for l in st.split("\n") if l.strip() and not l.startswith("??")]
+        if dirty:
+            rs = _upd_git("stash", "push", "-m", "QQX_AIBot 更新前自动备份", timeout=30)
+            stashed = rs.returncode == 0
+        try:
+            _upd_git("fetch", "--tags", "--prune", timeout=90)
+            rp = _upd_git("pull", "--ff-only", timeout=120)
+        except Exception as e:
+            if stashed:
+                _upd_git("stash", "pop", timeout=30)
+            return {"status": "error", "msg": "拉取失败：%s" % e, "before": before, "stashed": False}
+        if rp.returncode:
+            if stashed:
+                _upd_git("stash", "pop", timeout=30)
+            return {"status": "error", "before": before, "stashed": False,
+                    "msg": "拉取失败：%s" % ((rp.stderr or rp.stdout or "").strip()[:300])}
+        after = (_upd_git("rev-parse", "--short", "HEAD", timeout=15).stdout or "").strip()
+        changed = before != after
+        return {"status": "ok", "before": before, "after": after, "changed": changed,
+                "stashed": stashed,
+                "msg": ("已更新 %s → %s" % (before, after)) if changed else "已经是最新，无需更新"}
+
+    res = await asyncio.to_thread(_run)
+    if res.get("status") == "ok" and res.get("changed"):
+        res["msg"] = res["msg"] + "；重启程序后生效"
+        if res.get("stashed"):
+            res["msg"] = res["msg"] + "（本地改动已备份到 git stash，可用 git stash list 找回）"
+    return res
+
+
 @app.get("/api/presets")
 async def presets_get(scope: str = ""):
     """scope=claude 时读写的群聊模式那一套预设。"""

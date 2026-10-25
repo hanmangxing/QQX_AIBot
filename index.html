@@ -5299,6 +5299,7 @@
         worldBookEntries.splice(idx, 1);
         renderWorldBookCards();
         updateWorldBookStats();
+        saveWorldBookUI();     // 删除立即落盘并热加载，否则切数据源/刷新后条目会回来
       }
     }
 
@@ -8396,8 +8397,7 @@
 
     // ---------------- 世界书配置档（主 Bot / 群聊模式 各自独立一套） ----------------
     let WB_PROFILES = [];
-
-    function wbScopeLabel(sc) { return sc === 'claude' ? '群聊模式' : '主 Bot'; }
+    // wbScopeLabel 上面已经定义过（世界书导入导出那段），这里不再重复定义
 
     function wbProfileMsg(t, ok) {
       const el = document.getElementById('wbProfileMsg');

@@ -339,7 +339,7 @@ def _snowluma_dirs() -> list:
     if raw:
         out.append(os.path.dirname(raw) if os.path.isfile(raw) else raw)
     here = os.path.dirname(os.path.abspath(__file__))
-    out += [os.path.join("C:\\ai", "SnowLuma"),
+    out += [os.path.join(os.path.expanduser("~"), "SnowLuma"),
             os.path.join(os.path.dirname(here), "SnowLuma"),
             os.path.join(here, "SnowLuma")]
     res, seen = [], set()

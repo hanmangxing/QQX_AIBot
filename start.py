@@ -77,7 +77,7 @@ if __name__ == "__main__":
     
     print("[2/2] 正在启动后台控制台并自动打开浏览器...")
     print("控制台访问地址: http://127.0.0.1:8090 (避开 ComfyUI 8000 端口)")
-    print("NapCat 工作路径: C:\\ai\\NapCat.Shell.Windows.Node\\napcat.bat")
+    print("NapCat / SnowLuma 的工作路径请在 WebUI 控制台里按你的实际位置填写")
     print("-" * 60)
 
     # 异步在后台延迟打开浏览器

@@ -319,58 +319,107 @@ def napcat_mode() -> bool:
 
 
 def _snowluma_dirs() -> list:
-    """SnowLuma 可能的安装目录（用来读它自己生成的 OneBot 配置）。"""
+    """SnowLuma 目录候选：以「启动命令」填写的位置为准，不写死任何绝对路径。"""
     out = []
-    raw = str(current_config.get("snowluma_cmd") or "").strip().strip('"')
+    raw = str(current_config.get("snowluma_cmd") or "").strip()
     if raw:
-        out.append(os.path.dirname(raw) if os.path.isfile(raw) else raw)
-    here = os.path.dirname(os.path.abspath(__file__))
-    out += [os.path.join("C:\\ai", "SnowLuma"),
-            os.path.join(os.path.dirname(here), "SnowLuma"),
-            os.path.join(here, "SnowLuma")]
-    res, seen = [], set()
-    for d in out:
-        d = str(d or "").strip()
-        if d and d not in seen and os.path.isdir(d):
-            seen.add(d); res.append(d)
-    return res
+        toks = [t for t in raw.replace('"', " ").split() if (os.path.sep in t or "/" in t)] or [raw]
+        for tok in toks:
+            p = os.path.abspath(os.path.expandvars(os.path.expanduser(tok.strip('"'))))
+            if os.path.isfile(p):
+                p = os.path.dirname(p)
+            for d in (p, os.path.dirname(p)):
+                if d and os.path.isdir(d) and d not in out:
+                    out.append(d)
+    for base in (os.path.dirname(os.path.abspath(__file__)),
+                 os.path.dirname(os.path.dirname(os.path.abspath(__file__)))):
+        for name in ("SnowLuma", "snowluma"):
+            d = os.path.join(base, name)
+            if os.path.isdir(d) and d not in out:
+                out.append(d)
+    return out
 
 
-def snowluma_ws_info() -> dict:
-    """从 SnowLuma 自己的配置里读正向 WS 服务（networks.wsServers[0]）的端口与 access_token。"""
+def _iter_json_nodes(obj):
+    """递归遍历 json，产出 (层级路径, 字典节点)。"""
+    if isinstance(obj, dict):
+        yield "", obj
+        for k, v in obj.items():
+            for sub, node in _iter_json_nodes(v):
+                yield (str(k) + ("." + sub if sub else "")), node
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            for sub, node in _iter_json_nodes(v):
+                yield (str(i) + ("." + sub if sub else "")), node
+
+
+def _node_token(node) -> str:
+    """取访问令牌，键名兼容 accessToken / access_token / token。"""
+    for k, v in (node or {}).items():
+        if isinstance(v, str) and v.strip() and re.fullmatch(r"access_?token|token", str(k), re.I):
+            return v.strip()
+    return ""
+
+
+def snowluma_ws_info(url: str = "") -> dict:
+    """读 SnowLuma 配置里的正向 WS 端口与 access_token。
+
+    不假设文件名、不假设层级：在 SnowLuma 目录下遍历 json 找带令牌的节点，
+    优先取端口与当前地址一致的那条，其次取层级里带 ws 的那条。
+    """
     import glob as _glob
-    for _d in _snowluma_dirs():
-        try:
-            _fs = sorted(_glob.glob(os.path.join(_d, "config", "onebot_*.json")),
-                         key=os.path.getmtime, reverse=True)
-        except Exception:
-            continue
-        for _p in _fs:
+    try:
+        _want = int(urlsplit(str(url)).port or 0)
+    except Exception:
+        _want = 0
+    hits = []
+    for d in _snowluma_dirs():
+        files = []
+        for pat in (os.path.join(d, "config", "**", "*.json"), os.path.join(d, "**", "*.json")):
             try:
-                with io.open(_p, encoding="utf-8") as _f:
-                    _j = json.load(_f)
-                _ws = ((_j.get("networks") or {}).get("wsServers") or [])
-                if _ws and isinstance(_ws[0], dict):
-                    _s = _ws[0]
-                    return {"file": _p, "port": int(_s.get("port") or 0),
-                            "path": str(_s.get("path") or "/"),
-                            "token": str(_s.get("accessToken") or "")}
+                files += _glob.glob(pat, recursive=True)
+            except Exception:
+                pass
+        files = [f for f in set(files)
+                 if not re.search(r"[\\/](node_modules|\.git|cache|logs?)[\\/]", f, re.I)]
+        files.sort(key=lambda x: os.path.getmtime(x) if os.path.exists(x) else 0, reverse=True)
+        for f in files[:12]:
+            try:
+                with io.open(f, encoding="utf-8") as h:
+                    j = json.load(h)
             except Exception:
                 continue
-    return {}
+            for path, node in _iter_json_nodes(j):
+                tok = _node_token(node)
+                if not tok:
+                    continue
+                pv = node.get("port")
+                hits.append({"file": f, "path": path, "token": tok,
+                             "port": int(pv) if str(pv or "").isdigit() else 0,
+                             "ws_path": str(node.get("path") or "/"), "path_": str(node.get("path") or "/"),
+                             "is_ws": bool(re.search(r"ws|websocket", path, re.I))})
+        if hits:
+            break
+    if not hits:
+        return {}
+    if _want:
+        for h in hits:
+            if h["port"] == _want:
+                return h
+    for h in hits:
+        if h["is_ws"]:
+            return h
+    return hits[0]
 
 
 def snowluma_ws_autofix(url: str) -> str:
-    """SnowLuma 模式：地址里没带 access_token 就自动从它自己的配置里补上。"""
+    """SnowLuma 的 WS 地址没带 access_token 时，从它自己的配置里补上。"""
     u = str(url or "").strip()
     if not u or "access_token=" in u:
         return u
-    info = snowluma_ws_info()
-    tok = str(info.get("token") or "")
+    tok = str(snowluma_ws_info(u).get("token") or "").strip()
     if not tok:
         return u
-    # 规范成 ws://host:port/<path>?access_token=... ：SnowLuma 的 wsServers path 是 "/"，
-    # 少了这个斜杠它会把请求当成别的路径处理
     from urllib.parse import urlsplit, urlunsplit, quote
     sp = urlsplit(u)
     q = (sp.query + "&") if sp.query else ""

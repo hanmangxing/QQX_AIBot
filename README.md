@@ -80,48 +80,61 @@ QQX_AIBot 把这些打包成一套可运行的整体：**协议端保活 + 多�
 
 ## Docker 部署（可选）
 
-不想装 Python、或者想跑在 NAS / 服务器上，可以用 Docker。
+不想装 Python、或者要在 NAS / 服务器上跑，用 Docker。**协议端和主程序都进容器，宿主机只需要 Docker。**
 
-> **先说清楚一件事**：QQ 协议端（NapCat / SnowLuma）是**独立程序**，要扫码登录 QQ，
-> 没法塞进这个容器。所以 Docker 方案是「**控制台进容器，协议端留在外面**」。
-
-### 起控制台
+### 一条命令起来
 
 ```bash
+git clone https://github.com/hanmangxing/QQX_AIBot.git
+cd QQX_AIBot
 docker compose up -d
 ```
 
-起来后浏览器打开 `http://127.0.0.1:8090` 就是 WebUI 控制台。
-（首次启动会自动生成一份默认 `config.json`，在 WebUI 里改就行。）
+会起两个容器：`snowluma`（协议端，官方镜像 `motricseven7/snowluma`）+ `qqx-aibot`（主程序）。首次自动拉镜像，约 2.7GB。
 
-### 协议端怎么接
+### 首次使用：扫码登录 QQ
 
-协议端跑在**宿主机**上（或另一个容器里），然后在 WebUI 里把连接地址填成对应的地址：
+浏览器打开 **http://127.0.0.1:6081** 进 noVNC 网页远程桌面，用手机 QQ 扫码登录。
 
-| 协议端在哪 | WebUI 里填 |
+- 要密码的话，密码在 `docker logs snowluma` 里；也可以先用 `VNC_PASSWD=你的密码 docker compose up -d` 自己指定
+- 登录一次长期有效，数据存在具名卷里，重建容器不用重扫
+
+### 地址和 token 都不用管
+
+两个容器在同一个 compose 网络里，编排已经把地址设成容器名：
+
+```yaml
+QQX_SNOWLUMA_WS_URL: ws://snowluma:3001
+```
+
+`access_token` 也会自动读出来 —— SnowLuma 的数据卷只读挂给了主程序（`snowluma-data:/snowluma:ro` + `QQX_SNOWLUMA_DIR=/snowluma`）。
+
+**打开 http://127.0.0.1:8090 就能用，不用改任何配置。**
+
+### 端口
+
+| 端口 | 用途 |
 |---|---|
-| 宿主机（Linux，Docker 默认网桥） | `ws://172.17.0.1:3001` |
-| 宿主机（Windows / macOS） | `ws://host.docker.internal:3001` |
-| 另一个容器（同一网络） | `ws://<容器名>:3001` |
+| 8090 | QQX_AIBot 控制台 |
+| 6081 | noVNC 网页桌面（扫码登录用） |
+| 5099 | SnowLuma 自带 WebUI |
+| 3001 / 3000 | OneBot 正向 WS / HTTP |
+
+撞端口就在 `docker-compose.yml` 里改 `ports` 冒号左边那个数。
 
 ### 几个注意点
 
-- **数据不会丢**：编排把项目目录整个挂进了容器，`config.json`、记忆、表情包都写在宿主机上，
-  `docker compose down` 之后再 `up`，数据还在。
-- **保活（自动重登）在容器里不生效**：它靠 Windows 的 `tasklist` / `taskkill` 管进程，
-  容器里没有这套。协议端在容器外，重启用 `restart: unless-stopped` 加协议端自己的守护兜。
-- **监听地址**：Windows 上默认只绑 `127.0.0.1`（更安全）；容器 / Linux 下默认绑
-  `0.0.0.0`，否则端口映射连不进来。想改可以用环境变量 `QQX_HOST`。
-- **时区已经设好**（`TZ=Asia/Shanghai`），时间感知不会因为容器默认 UTC 而错 8 小时。
+- **WebUI 里的「启动协议端」按钮在容器里用不了** —— 协议端自己也是个容器，用 `docker compose restart snowluma` 管它
+- **保活不生效** —— 容器配了 `restart: unless-stopped`，崩了会自动重启
+- 想调参数（VNC 密码、屏幕分辨率等）在项目根目录建个 `.env`，变量名参考 SnowLuma 官方模板的 `.env.example`
 
-### 不用 compose 的手动方式
+### 备选：协议端留在容器外
 
-```bash
-docker build -t qqx-aibot:1.0.0 .
-docker run -d --name qqx-aibot -p 8090:8090 -v "$PWD:/app" qqx-aibot:1.0.0
-```
+宿主机上已经跑着 SnowLuma / NapCat、不想动它的话：把 `docker-compose.yml` 里 `qqx-aibot` 的 `depends_on: [snowluma]` 和 `- snowluma-data:/snowluma:ro` 删掉，然后在 WebUI 里把 ws 地址填成 `host.docker.internal:3001`。
 
-
+- Windows / macOS 的 Docker Desktop 自带这个主机名；Linux 上编排已配好 `extra_hosts`
+- 这种模式下 `access_token` 要自己带在地址里：`host.docker.internal:3001?access_token=你的token`
+- 地址不写 `ws://` 也没关系，会自动补上
 ## 目录结构
 
 | 文件 / 目录 | 作用 |

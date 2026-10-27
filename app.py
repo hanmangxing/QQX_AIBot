@@ -360,6 +360,10 @@ def _snowluma_dirs() -> list:
     raw = str(current_config.get("snowluma_cmd") or "").strip().strip('"')
     if raw:
         out.append(os.path.dirname(raw) if os.path.isfile(raw) else raw)
+    # 容器里 SnowLuma 的数据卷挂进来后，用 QQX_SNOWLUMA_DIR 指过来
+    _env = str(os.environ.get("QQX_SNOWLUMA_DIR") or "").strip()
+    if _env:
+        out.append(_env)
     here = os.path.dirname(os.path.abspath(__file__))
     out += [os.path.join(os.path.expanduser("~"), "SnowLuma"),
             os.path.join(os.path.dirname(here), "SnowLuma"),
@@ -446,8 +450,13 @@ def ws_url_normalize(url: str) -> str:
 
 
 def snowluma_ws_autofix(url: str) -> str:
-    """SnowLuma 模式：把地址补成带最新 access_token 的形式。"""
-    u = ws_url_normalize(url)
+    """SnowLuma 模式：把地址补成带最新 access_token 的形式。
+
+    QQX_SNOWLUMA_WS_URL 可以直接覆盖配置里的地址，方便 Docker 里
+    把地址设成容器名（ws://snowluma:3001），不用改 config.json。
+    """
+    _env = str(os.environ.get("QQX_SNOWLUMA_WS_URL") or "").strip()
+    u = ws_url_normalize(_env or url)
     if not u:
         return u
     info = snowluma_ws_info()

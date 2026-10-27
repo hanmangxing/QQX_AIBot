@@ -1,30 +1,85 @@
-# QQ星 QQX_AIBot —— Docker 编排
+# QQ星 QQX_AIBot —— Docker 编排（推荐：QQX_AIBot + SnowLuma 两个容器）
 #
-#   docker compose up -d      启动（首次会自动构建镜像）
+#   docker compose up -d      启动（首次会拉 SnowLuma 镜像并构建 QQX_AIBot）
 #   docker compose logs -f    看日志
 #   docker compose down       停止
 #
-# 协议端（NapCat / SnowLuma）要扫码登录 QQ，本编排不包含它。
-# 让它跑在宿主机上，然后在 WebUI 里把 ws 地址填成宿主机地址即可。
+# 首次使用：浏览器打开 http://127.0.0.1:6081 进 noVNC 网页桌面，用手机 QQ 扫码登录。
+# 登录一次就长期有效（数据存在具名卷里，重建容器不丢）。
+#
+# 两个容器在同一个 compose 网络里，QQX_AIBot 直接按容器名连 SnowLuma：
+# 在 WebUI「设置 → 协议端」把 ws 地址填成  ws://snowluma:3001
+# （不需要 host.docker.internal，也不需要手填 access_token —— 下面把 SnowLuma
+#  的数据卷挂给了 QQX_AIBot，它会自动读出 token 回填。）
+#
+# 如果你要把协议端留在容器外（比如宿主机上已经跑着 SnowLuma / NapCat），
+# 把下面 qqx-aibot 的 snowluma 依赖去掉，地址改成 host.docker.internal:3001 即可。
 
 services:
+  # ---------------- 协议端：SnowLuma（官方镜像）----------------
+  snowluma:
+    image: motricseven7/snowluma:latest
+    container_name: snowluma
+    restart: unless-stopped
+    # SnowLuma 要把 hook 注入真实 QQ 进程，需要这两个权限
+    shm_size: 1gb
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 1048576
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp=unconfined
+    environment:
+      # noVNC 网页桌面的密码；留空则首次启动随机生成，在 docker logs snowluma 里看
+      VNC_PASSWD: ${VNC_PASSWD:-}
+      SNOWLUMA_ONEBOT_HOST: 0.0.0.0
+      SNOWLUMA_WEBUI_HOST: 0.0.0.0
+      SNOWLUMA_WEBUI_PORT: "5099"
+      SNOWLUMA_LOG_LEVEL: info
+      SNOWLUMA_SCREEN: 1920x1080x24
+      SNOWLUMA_HOOK_AUTOLOAD: "1"
+      SNOWLUMA_UID: "1000"
+      SNOWLUMA_GID: "1000"
+    ports:
+      - "6081:6081"    # noVNC 网页桌面 —— 扫码登录用这个
+      - "5099:5099"    # SnowLuma 自带 WebUI
+      - "3000:3000"    # OneBot HTTP
+      - "3001:3001"    # OneBot 正向 WebSocket（QQX_AIBot 连这个）
+    volumes:
+      - snowluma-data:/app/data
+      - snowluma-client-config:/app/.config
+      - snowluma-client-data:/app/.local/share
+
+  # ---------------- 主程序：QQX_AIBot ----------------
   qqx-aibot:
     build: .
     image: qqx-aibot:1.0.0
     container_name: qqx-aibot
     restart: unless-stopped
+    depends_on:
+      - snowluma
     ports:
       - "8090:8090"
-    # Linux 上也能解析 host.docker.internal（Docker Desktop 自带）
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     environment:
-      QQX_SNOWLUMA_WEBUI: host.docker.internal:5099
       TZ: Asia/Shanghai
-      # 协议端目录：只在「让容器自己去拉起 NapCat」时才需要填（一般不填）
-      # QQX_NAP_DIR: /napcat
-      # QQX_SNOWLUMA_DIR: /snowluma
+      # SnowLuma 的数据目录（里面有 config/onebot_*.json，含 access_token）。
+      # 挂进来后 QQX_AIBot 会自动读 token 回填，不用手填。
+      QQX_SNOWLUMA_DIR: /snowluma
+      # 直接按容器名连 SnowLuma，不用改 config.json（本机跑仍用 127.0.0.1）
+      QQX_SNOWLUMA_WS_URL: ws://snowluma:3001
     volumes:
       # 项目目录本身就是数据目录（config.json、记忆、表情包都写在代码旁边），
       # 整目录挂进去：重建容器不丢数据，改配置也不用重新构建镜像。
       - ./:/app
+      # 复用 SnowLuma 的数据卷（只读），用来自动取 access_token
+      - snowluma-data:/snowluma:ro
+
+volumes:
+  snowluma-data:
+    name: qq-gateway-data      # 与 SnowLuma 官方模板同名，方便单独跑官方 compose 时复用
+  snowluma-client-config:
+    name: qq-client-config
+  snowluma-client-data:
+    name: qq-client-data

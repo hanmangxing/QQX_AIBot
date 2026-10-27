@@ -3531,6 +3531,8 @@ async def _read_snowluma_stream(proc):
 
 async def start_snowluma() -> dict:
     """启动本地 SnowLuma 进程（切到 SnowLuma 时的托管入口）。"""
+    if os.name != "nt":
+        return {"status": "error", "message": "当前运行在容器 / Linux 环境里，启动不了容器外的协议端。请在容器外单独运行 NapCat / SnowLuma，并在设置里把 ws 地址填成容器能访问到的地址（Docker 下一般是 host.docker.internal）。"}
     global snowluma_process, snowluma_reader_task, _snowluma_starting, _snowluma_starting_at
     if snowluma_process and snowluma_process.returncode is None:
         return {"status": "warn", "message": "SnowLuma 进程已经在运行中"}
@@ -3822,6 +3824,8 @@ async def api_snowluma_keepalive(body: dict):
 @app.post("/api/napcat/start")
 async def start_napcat():
     """启动本地 NapCat 进程（仅 NapCat 模式可用）"""
+    if os.name != "nt":
+        return {"status": "error", "message": "当前运行在容器 / Linux 环境里，启动不了容器外的协议端。请在容器外单独运行 NapCat / SnowLuma，并在设置里把 ws 地址填成容器能访问到的地址（Docker 下一般是 host.docker.internal）。"}
     _g = _napcat_guard("启动 NapCat 进程")
     if _g:
         return _g

@@ -406,9 +406,28 @@ def snowluma_ws_info() -> dict:
     return {}
 
 
+def ws_url_normalize(url: str) -> str:
+    """把填进来的地址规范成 ws:// / wss:// 开头。
+
+    允许只填 host:port（Docker 里填 host.docker.internal:3001 很自然），
+    也允许填 http(s)://，统一转成 ws(s)://。缺协议头会让 websockets
+    直接报 "scheme isn't ws or wss" 并每 3 秒重试一次，所以在这里兜住。
+    """
+    u = str(url or "").strip()
+    if not u:
+        return u
+    if u.startswith("https://"):
+        return "wss://" + u[8:]
+    if u.startswith("http://"):
+        return "ws://" + u[7:]
+    if u.startswith(("ws://", "wss://")):
+        return u
+    return "ws://" + u.lstrip("/")
+
+
 def snowluma_ws_autofix(url: str) -> str:
     """SnowLuma 模式：把地址补成带最新 access_token 的形式。"""
-    u = str(url or "").strip()
+    u = ws_url_normalize(url)
     if not u:
         return u
     info = snowluma_ws_info()
@@ -428,7 +447,7 @@ def snowluma_ws_autofix(url: str) -> str:
 def active_ws_url() -> str:
     """按协议端取 OneBot 正向 WS 地址。"""
     if napcat_mode():
-        return str(current_config.get("napcat_ws_url") or "ws://127.0.0.1:3001")
+        return ws_url_normalize(str(current_config.get("napcat_ws_url") or "ws://127.0.0.1:3001"))
     return snowluma_ws_autofix(str(current_config.get("snowluma_ws_url") or "ws://127.0.0.1:3001"))
 
 
@@ -3405,7 +3424,7 @@ def _proto_ws_url(p: str) -> str:
     """协议端的 OneBot WS 地址（SnowLuma 自动补 access_token）。"""
     if p == "snowluma":
         return snowluma_ws_autofix(str(current_config.get("snowluma_ws_url") or "").strip() or "ws://[filtered: mount info]:3001")
-    return str(current_config.get("napcat_ws_url") or "").strip() or "ws://[filtered: mount info]:3001"
+    return ws_url_normalize(str(current_config.get("napcat_ws_url") or "").strip() or "ws://[filtered: mount info]:3001")
 
 
 def _proto_ws_hostport(p: str):

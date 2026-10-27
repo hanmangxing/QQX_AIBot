@@ -7,3 +7,9 @@
 *.webp binary
 *.onnx binary
 *.zip binary
+
+# Docker 相关文件必须是 LF：CRLF 的 Dockerfile 会让 docker build 报错
+Dockerfile text eol=lf
+docker-compose.yml text eol=lf
+.dockerignore text eol=lf
+*.sh text eol=lf

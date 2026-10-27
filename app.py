@@ -3680,6 +3680,12 @@ def snowluma_webui_url() -> str:
     SnowLuma 必须先在它自己的 WebUI 里注入 QQ 进程并登录，OneBot 端口才会开，
     QQX_AIBot 才连得上——所以这里给它一个可直接跳转的入口。
     """
+    # 容器里 127.0.0.1 指的是容器自己，而打开这个地址的是宿主机上的浏览器，
+    # 结果会跳到宿主机那个「本机版 SnowLuma」上去，把人绕晕。
+    # 所以 Docker 里用 QQX_SNOWLUMA_WEBUI_URL 明确告诉它该给浏览器哪个地址。
+    _ov = str(os.environ.get("QQX_SNOWLUMA_WEBUI_URL") or "").strip()
+    if _ov:
+        return _ov.rstrip("/")
     _port, _host = 5099, "127.0.0.1"
     # 安装目录不写死：按控制台左下角填的「SnowLuma 启动命令」反推（换安装地址不用改代码）
     for _d in _snowluma_dirs():

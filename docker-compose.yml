@@ -69,6 +69,9 @@ services:
       QQX_SNOWLUMA_DIR: /snowluma
       # 直接按容器名连 SnowLuma，不用改 config.json（本机跑仍用 127.0.0.1）
       QQX_SNOWLUMA_WS_URL: ws://snowluma:3001
+      # 控制台上「协议端 WebUI」入口该给浏览器什么地址。
+      # 浏览器跑在宿主机上，所以这里填宿主机映射出去的端口，不能填容器名。
+      QQX_SNOWLUMA_WEBUI_URL: http://127.0.0.1:5099
     volumes:
       # 项目目录本身就是数据目录（config.json、记忆、表情包都写在代码旁边），
       # 整目录挂进去：重建容器不丢数据，改配置也不用重新构建镜像。

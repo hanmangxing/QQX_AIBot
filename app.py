@@ -162,12 +162,12 @@ DEFAULT_CONFIG = {
     "idle_prompt_chat_recall": "",
     "system_prompt": "",
     "napcat_ws_url": "ws://127.0.0.1:3001",
-    "napcat_cmd": r"C:\ai\NapCat.Shell.Windows.Node\napcat.bat",
+    "napcat_cmd": (r"C:\ai\NapCat.Shell.Windows.Node\napcat.bat" if os.name == "nt" else ""),
     # ---- 协议端：napcat（默认，QQX_AIBot 托管进程+保活）/ snowluma（空协议模式，只连 OneBot）----
     "qq_protocol": "snowluma",
     "snowluma_ws_url": "ws://127.0.0.1:3001",
     # SnowLuma 的启动脚本路径（切到 SnowLuma 时由 QQX_AIBot 拉起；空协议模式下不管登录/保活）
-    "snowluma_cmd": r"C:\ai\SnowLuma\launcher.bat",
+    "snowluma_cmd": (r"C:\ai\SnowLuma\launcher.bat" if os.name == "nt" else ""),
     "snowluma_keepalive": True,     # SnowLuma 进程保活：进程掉了自动拉起（对齐 NapCat 保活）
     "snowluma_ka_interval": 30,     # SnowLuma 保活检测间隔（秒）
     # SnowLuma 安装目录：留空则按上面「启动命令」的路径自动反推（换安装地址不用改代码）
@@ -3588,8 +3588,11 @@ async def stop_snowluma() -> dict:
         _pids = await asyncio.get_running_loop().run_in_executor(None, _snowluma_pids)
         for _p in _pids:
             try:
-                subprocess.run(["taskkill", "/F", "/T", "/PID", str(_p)],
-                               capture_output=True, timeout=15)
+                if os.name == "nt":
+                    subprocess.run(["taskkill", "/F", "/T", "/PID", str(_p)],
+                                   capture_output=True, timeout=15)
+                else:
+                    os.kill(_p, 9)
                 _killed.append(_p)
             except Exception:
                 pass

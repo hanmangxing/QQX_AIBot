@@ -78,6 +78,48 @@ QQX_AIBot 把这些打包成一套可运行的整体：**协议端保活 + 多�
 
 > `config.json` 由程序首次运行时自动生成，**不要**提交或外传——它含密钥，已在 `.gitignore` 中。所有可配置项的键名见 `config.example.json`。
 
+## Docker 部署（可选）
+
+不想装 Python、或者想跑在 NAS / 服务器上，可以用 Docker。
+
+> **先说清楚一件事**：QQ 协议端（NapCat / SnowLuma）是**独立程序**，要扫码登录 QQ，
+> 没法塞进这个容器。所以 Docker 方案是「**控制台进容器，协议端留在外面**」。
+
+### 起控制台
+
+```bash
+docker compose up -d
+```
+
+起来后浏览器打开 `http://127.0.0.1:8090` 就是 WebUI 控制台。
+（首次启动会自动生成一份默认 `config.json`，在 WebUI 里改就行。）
+
+### 协议端怎么接
+
+协议端跑在**宿主机**上（或另一个容器里），然后在 WebUI 里把连接地址填成对应的地址：
+
+| 协议端在哪 | WebUI 里填 |
+|---|---|
+| 宿主机（Linux，Docker 默认网桥） | `ws://172.17.0.1:3001` |
+| 宿主机（Windows / macOS） | `ws://host.docker.internal:3001` |
+| 另一个容器（同一网络） | `ws://<容器名>:3001` |
+
+### 几个注意点
+
+- **数据不会丢**：编排把项目目录整个挂进了容器，`config.json`、记忆、表情包都写在宿主机上，
+  `docker compose down` 之后再 `up`，数据还在。
+- **保活（自动重登）在容器里不生效**：它靠 Windows 的 `tasklist` / `taskkill` 管进程，
+  容器里没有这套。协议端在容器外，重启用 `restart: unless-stopped` 加协议端自己的守护兜。
+- **时区已经设好**（`TZ=Asia/Shanghai`），时间感知不会因为容器默认 UTC 而错 8 小时。
+
+### 不用 compose 的手动方式
+
+```bash
+docker build -t qqx-aibot:1.0.0 .
+docker run -d --name qqx-aibot -p 8090:8090 -v "$PWD:/app" qqx-aibot:1.0.0
+```
+
+
 ## 目录结构
 
 | 文件 / 目录 | 作用 |

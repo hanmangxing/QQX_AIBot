@@ -1,0 +1,46 @@
+# ---- 版本控制 / 缓存 ----
+.git
+.gitignore
+.gitattributes
+__pycache__/
+*.pyc
+*.pyo
+
+# ---- 备份 / 临时文件 ----
+*.bak
+*.bak_*
+_chk_preset.js
+
+# ---- 运行时状态（靠挂载，不烤进镜像）----
+config.json
+config.json.bak*
+memory.json
+memory_vectors.json
+history.json
+history_archive.json
+mood.json
+notebook.json
+world_book.json
+active_msg.json
+idle.json
+lwb_aliases.json
+snowluma_console.log
+napcat_console.log
+napcat_webui_live.json
+claude_data/
+comfyui_output/
+qq_images/
+sticker_data/
+debounce_model/
+_deliver/
+NVIDIA Corporation/
+
+# ---- 打包产物 / 大文件 ----
+*.zip
+*.mp4
+QQ星介绍视频脚本.md
+
+# ---- Docker 自身 ----
+Dockerfile
+docker-compose.yml
+.dockerignore

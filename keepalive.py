@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import re
+import signal
 import subprocess
 import time
 import urllib.parse
@@ -13,7 +14,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-NAP = Path(r"C:\ai\NapCat.Shell.Windows.Node")
+IS_WIN = (os.name == "nt")
+# 协议端目录：优先环境变量 QQX_NAP_DIR，其次 Windows 默认位置。
+# Linux / Docker 下协议端一般是外部进程，这里只是读它配置文件的兜底路径。
+NAP = Path(os.environ.get("QQX_NAP_DIR") or (r"C:\ai\NapCat.Shell.Windows.Node" if IS_WIN else "."))
 WEBUI_JSON = NAP / "napcat" / "config" / "webui.json"
 LIVE_JSON = Path("napcat_webui_live.json")   # app.py 抓到 NapCat 实际 WebUI 地址后写这里（端口可能漂移）
 QR_PNG = NAP / "napcat" / "cache" / "qrcode.png"     # 扫码登录阶段 NapCat 会把登录二维码写到这里
@@ -311,6 +315,12 @@ def onebot_ws_port():
 def port_listening(port):
     """端口是否在监听（比 HTTP 探测可靠，不依赖对方开了 HTTP server）"""
     try:
+        if not IS_WIN:
+            # Linux / Docker：直接试连，比解析 netstat 可靠（容器里常常没装 net-tools）
+            import socket as _sk
+            with _sk.socket(_sk.AF_INET, _sk.SOCK_STREAM) as s:
+                s.settimeout(1.0)
+                return s.connect_ex(("127.0.0.1", int(port))) == 0
         out = subprocess.run("netstat -ano", shell=True, capture_output=True, text=True,
                              encoding="utf-8", errors="replace", timeout=20).stdout or ""
         return bool(re.search(r":%d\s[^\n]*LISTENING" % int(port), out, re.IGNORECASE))
@@ -320,6 +330,14 @@ def port_listening(port):
 
 def napcat_alive():
     """NapCat \u8fdb\u7a0b\u662f\u5426\u5b58\u5728"""
+    if not IS_WIN:
+        # Linux / Docker：协议端由宿主机或另一个容器托管，用进程名粗判
+        try:
+            r = subprocess.run(["pgrep", "-f", "napcat"], stdin=subprocess.DEVNULL,
+                               capture_output=True, text=True, timeout=10)
+            return r.returncode == 0
+        except Exception:
+            return True
     try:
         out = subprocess.run('tasklist /FI "IMAGENAME eq node.exe" /FO CSV',
                              shell=True, capture_output=True, text=True,
@@ -338,6 +356,21 @@ def napcat_procs():
     """当前在跑的 NapCat node 进程 [{pid, cmd}]（清残留用，避免多实例抢端口）。"""
     out = []
     try:
+        if not IS_WIN:
+            r = subprocess.run(["ps", "-eo", "pid=,args="], stdin=subprocess.DEVNULL,
+                               capture_output=True, text=True, encoding="utf-8",
+                               errors="replace", timeout=15)
+            for ln in (r.stdout or "").splitlines():
+                ln = ln.strip()
+                if not ln:
+                    continue
+                _pid, _, _cmd = ln.partition(" ")
+                if "napcat" in _cmd.lower():
+                    try:
+                        out.append({"pid": int(_pid), "cmd": _cmd})
+                    except ValueError:
+                        pass
+            return out
         ps = ("Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' } | "
               "ForEach-Object { $_.ProcessId.ToString() + '|' + $_.CommandLine }")
         r = subprocess.run(["powershell", "-NoProfile", "-Command", ps], stdin=subprocess.DEVNULL, capture_output=True,
@@ -364,10 +397,15 @@ def kill_napcat_procs(keep=()):
         if p["pid"] in keep:
             continue
         try:
-            r = subprocess.run(["taskkill", "/F", "/T", "/PID", str(p["pid"])],
-                               stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                               encoding="utf-8", errors="replace", timeout=20)
-            if r.returncode == 0:
+            if IS_WIN:
+                r = subprocess.run(["taskkill", "/F", "/T", "/PID", str(p["pid"])],
+                                   stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                                   encoding="utf-8", errors="replace", timeout=20)
+                _ok = (r.returncode == 0)
+            else:
+                os.kill(p["pid"], signal.SIGKILL)
+                _ok = True
+            if _ok:
                 killed.append(p["pid"])
             else:
                 failed.append(p["pid"])
@@ -476,7 +514,8 @@ def notify_private(text):
 # ---------------- 快速登录（免扫码） ----------------
 # NapCat 的免扫码机制：启动时带 -q <QQ号>，napcat.mjs 会拿本地登录票据直接
 # quickLoginWithUin；票据失效时再用 NAPCAT_QUICK_PASSWORD(_MD5) 兜底，最后才二维码。
-DEFAULT_NAP_BAT = r"C:\ai\NapCat.Shell.Windows.Node\napcat.bat"
+DEFAULT_NAP_BAT = os.environ.get("QQX_NAP_CMD") or (
+    r"C:\ai\NapCat.Shell.Windows.Node\napcat.bat" if IS_WIN else "")
 
 
 def quick_account(cfg=None):

@@ -42,3 +42,6 @@ _deliver/
 # 本地备份与大体积视频（不进仓库）
 config.json.bak*
 QQ星介绍视频*.mp4
+
+# 打包产物（走 Release 附件，不进仓库）
+*.zip

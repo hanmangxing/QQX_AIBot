@@ -1,0 +1,26 @@
+# QQ星 QQX_AIBot —— Docker 编排
+#
+#   docker compose up -d      启动（首次会自动构建镜像）
+#   docker compose logs -f    看日志
+#   docker compose down       停止
+#
+# 协议端（NapCat / SnowLuma）要扫码登录 QQ，本编排不包含它。
+# 让它跑在宿主机上，然后在 WebUI 里把 ws 地址填成宿主机地址即可。
+
+services:
+  qqx-aibot:
+    build: .
+    image: qqx-aibot:1.0.0
+    container_name: qqx-aibot
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    environment:
+      TZ: Asia/Shanghai
+      # 协议端目录：只在「让容器自己去拉起 NapCat」时才需要填（一般不填）
+      # QQX_NAP_DIR: /napcat
+      # QQX_SNOWLUMA_DIR: /snowluma
+    volumes:
+      # 项目目录本身就是数据目录（config.json、记忆、表情包都写在代码旁边），
+      # 整目录挂进去：重建容器不丢数据，改配置也不用重新构建镜像。
+      - ./:/app

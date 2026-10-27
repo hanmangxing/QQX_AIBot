@@ -21,6 +21,7 @@ import json
 import re
 import time
 import urllib.parse
+import os
 import urllib.request
 from pathlib import Path
 
@@ -40,7 +41,8 @@ CONFIG_JSON = _cfg_path()
 DEFAULT_WS_URL = "ws://127.0.0.1:3001"
 DEFAULT_WS_PORT = 3001
 DEFAULT_HTTP_PORT = 3000
-DEFAULT_DIR = r"C:\ai\SnowLuma"
+DEFAULT_DIR = os.environ.get("QQX_SNOWLUMA_DIR") or (
+    r"C:\ai\SnowLuma" if os.name == "nt" else "")
 
 _cache = {"at": 0.0, "data": {}}
 _TTL = 5.0

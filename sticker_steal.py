@@ -784,7 +784,13 @@ class StickerVision:
         if not model:
             raise RuntimeError("还没配置表情包识图模型的 model 名")
         key = str(cfg.get("sticker_vision_key") or "").strip()
-        timeout = float(cfg.get("sticker_vision_timeout", 120) or 120)
+        timeout = float(cfg.get("sticker_vision_timeout", 600) or 600)
+        # 思维链额度：qwen3-vl 这类会先输出一大段思考，给少了正文就空了
+        try:
+            max_tokens = int(cfg.get("sticker_vision_max_tokens", 8192) or 8192)
+        except (TypeError, ValueError):
+            max_tokens = 8192
+        max_tokens = max(512, min(65536, max_tokens))
 
         data = path.read_bytes()
         ext = path.suffix.lstrip(".").lower() or sniff_ext(data)
@@ -804,7 +810,7 @@ class StickerVision:
             "model": model,
             "messages": [{"role": "user", "content": parts}],
             "temperature": 0.2,
-            "max_tokens": 2048,   # qwen3-vl 这类会先输出思维链，给少了 content 会是空的
+            "max_tokens": max_tokens,   # 可在 WebUI 调（默认 8192）：给思维链留的额度
             "stream": False,
         }
         headers = {"Content-Type": "application/json"}
@@ -1561,6 +1567,7 @@ class StickerStealer:
             "vision_model": str(cfg.get("sticker_vision_model") or ""),
             "vision_interval": float(cfg.get("sticker_vision_interval", 5) or 0),
             "vision_timeout": float(cfg.get("sticker_vision_timeout", 180) or 180),
+        "vision_max_tokens": int(cfg.get("sticker_vision_max_tokens", 8192) or 8192),
             "vision_prompt": str(cfg.get("sticker_vision_prompt") or ""),
             "vision_fallback_transcribe": bool(
                 cfg.get("sticker_vision_fallback_transcribe", False)),

@@ -111,6 +111,7 @@ DEFAULT_CONFIG = {
     "sec_repeat_window": 6,
     "sec_repeat_need": 3,
     "sec_repeat_min_len": 2,
+    "sec_repeat_prob": 0.6,          # 条件满足后再抽概率（0-1，越接近1越容易跟复读）
     "sec_debug": False,
     # ---- 群聊呼唤模式：被@/被回复后保持在线 N 分钟，期间不经秘书直接放给主对话 ----
     "claude_call_mode_enabled": True,      # 呼唤模式总开关
@@ -152,6 +153,10 @@ DEFAULT_CONFIG = {
     "idle_max_per_day": 3,
     "idle_chat_recall_enabled": True,
     "idle_chat_recall_rate": 0.08,
+    "idle_solo_enabled": True,
+    "idle_solo_ids": [],
+    "idle_solo_cooldown_hours": 6,
+    "idle_solo_max_per_day": 1,
     "idle_prompt_idle": "",
     "idle_prompt_recall": "",
     "idle_prompt_chat_recall": "",
@@ -205,7 +210,20 @@ DEFAULT_CONFIG = {
     "comfy_guide": "",               # 注入给模型的生图能力说明；留空=用内置默认，支持 {max_rule} 占位符
     "time_inject_enabled": True,     # 是否把「当前真实时间」注入 system 提示词
     "debug_mode": False,          # 调试模式：只打印 API 请求/返回，不改上下文行为
-    "time_inject_tmpl": ""           # 自定义时间块文案；留空=用内置默认，支持 {time}/{date}/{weekday}/{hm}/{iso}
+    "time_inject_tmpl": "",
+    "time_inject_group": True,      # 时间感知是否在群聊也生效（勾了就注入，不看群聊人设档）
+    # ---- QQ空间：心情爆表时自己发条说说（登录态借协议端，不用账号密码）----
+    "qzone_enabled": True,             # 总开关
+    "qzone_post_weight": 50,            # 抽取命中概率（0-100，越大越发）
+    "qzone_post_cooldown_min": 180,     # 同一聊天两次之间的最小间隔（分钟）
+    "qzone_trigger_energy_min": 90,     # 精力阈值
+    "qzone_trigger_lust_min": 0,        # 情欲阈值（0=不参与判定）
+    "qzone_trigger_mood_min": 90,       # 心情阈值（情绪值=心情）
+    "qzone_send_images": True,          # 是否带上 AI 自己挑的表情包
+    "qzone_block_tag": "qzone",         # 说说正文的正则块标签
+    "qzone_post_prompt": "",            # 写说说的注入提示词，留空用内置默认
+    "qzone_cookie_ttl": 600,            # 登录态缓存秒数
+    "qzone_timeout": 25,                # 接口超时秒数           # 自定义时间块文案；留空=用内置默认，支持 {time}/{date}/{weekday}/{hm}/{iso}
 }
 
 
@@ -218,6 +236,9 @@ DEFAULT_CONFIG.update({
     "vision_sticker_enabled": True,   # 表情包（image sub_type=1）也一起识别
     "vision_see_enabled": True,       # 允许 AI 用 <see n="编号" /> 回看历史图片（会多一次请求）
     "vision_guide": "",               # 注入给模型的识图说明；留空=用内置默认
+    # 勾选后：所有发给主对话 API 的图片/表情包，先交给「表情包识图模型」转述成文字再发
+    # （给没有多模态能力的主对话模型用；关掉=按原样发图）
+    "main_vision_transcribe": False,
 })
 
 
@@ -255,7 +276,8 @@ DEFAULT_CONFIG.update({
     "sticker_vision_key": "ollama",
     "sticker_vision_model": "huihui_ai/qwen3-vl-abliterated:8b",
     "sticker_vision_interval": 5,           # 两次识图之间至少间隔多少秒
-    "sticker_vision_timeout": 300,          # 单张识图超时（秒），本地 8B 视觉模型冷启动可能上百秒
+    "sticker_vision_timeout": 600,          # 单张识图超时（秒），本地 8B 视觉模型冷启动可能上百秒
+    "sticker_vision_max_tokens": 8192,      # 思维链额度：给少了「思维链把 token 吃光」正文就空
     "sticker_vision_prompt": "",            # 留空用内置分类提示词
 })
 
@@ -424,7 +446,8 @@ try:
 except Exception:
     _view_scope = "main"
 
-WORLD_BOOK_FILE = Path("world_book.json")
+# 锚定到本文件所在目录，避免从别的目录启动时读写到另一个 world_book.json
+WORLD_BOOK_FILE = Path(__file__).resolve().parent / "world_book.json"
 
 
 def load_world_book() -> list:
@@ -1165,6 +1188,20 @@ def _wb_apply_for(scope: str, entries: list):
     else:
         bot_client.update_world_book(entries)
 
+def _wb_active_profile(scope: str) -> str:
+    """当前世界书对应的是哪个配置档（按内容比对，比中就是它）。"""
+    cur = _wb_load_for(scope)
+    if not cur:
+        return ""
+    try:
+        sig = json.dumps(cur, ensure_ascii=False, sort_keys=True)
+        for r in _wb_profile_rows(scope):
+            if json.dumps(r.get("entries") or [], ensure_ascii=False, sort_keys=True) == sig:
+                return str(r.get("name") or "")
+    except Exception:
+        pass
+    return ""
+
 
 @app.get("/api/world_book/profiles")
 async def wb_profiles_list(scope: str = "main"):
@@ -1173,6 +1210,7 @@ async def wb_profiles_list(scope: str = "main"):
     rows = [{"name": str(r.get("name")), "count": len(r.get("entries") or [])}
             for r in _wb_profile_rows(sc) if isinstance(r, dict) and r.get("name")]
     return {"status": "ok", "scope": sc, "profiles": rows,
+            "active": _wb_active_profile(sc),
             "current_count": len(_wb_load_for(sc))}
 
 
@@ -1202,6 +1240,11 @@ async def wb_profile_apply(payload: Dict[str, Any]):
     if row is None:
         return {"status": "not_found", "message": "没有这个配置档：%s" % name}
     entries = row.get("entries") or []
+    if not entries and not payload.get("force_empty"):
+        _cur = _wb_load_for(sc)
+        if _cur:
+            return {"status": "need_confirm", "current": len(_cur),
+                    "message": "配置档「%s」是空的（0 条），切过去会把当前 %d 条世界书清掉。" % (name, len(_cur))}
     _wb_save_for(sc, entries)
     _wb_apply_for(sc, entries)
     await log_publisher("SUCCESS", "已切换世界书配置档：%s（%s，%d 条）"
@@ -1325,6 +1368,12 @@ async def get_world_book():
 async def update_world_book_endpoint(payload: Dict[str, Any]):
     """保存并热加载世界书与角色人设设定列表（蓝绿灯机制）"""
     entries = payload.get("entries", [])
+    # 清空拦截：本来有内容、这次要存成 0 条 -> 先要一句确认
+    if not entries and not payload.get("force_empty"):
+        _old = _wb_load()
+        if _old:
+            return {"status": "need_confirm", "current": len(_old),
+                    "message": "当前世界书有 %d 条，这次保存会把它们全部清空。" % len(_old)}
     _wb_save(entries)
     _wb_apply(entries)
     
@@ -1560,10 +1609,18 @@ async def hide_history_message(user_id: str, message_id: str, payload: Dict[str,
 
 
 @app.delete("/api/history/{user_id}")
-async def clear_history(user_id: str, scope: str = ""):
-    """清空指定用户的全部上下文"""
+async def clear_history(user_id: str, scope: str = "", purge: bool = False):
+    """清空指定用户的全部上下文。
+
+    purge=1 时连会话记录一起删掉 —— 会话列表里不再出现这个用户。
+    不带 purge 就只是清空消息，会话还留在列表里（显示 0 条）。
+    """
     _s = str(scope or "").strip().lower()
     _s = _s if _s in ("main", "claude") else _view_scope
+    if purge:
+        ok = _hist(_s).purge_user(user_id)
+        await log_publisher("WARN", f"[上下文管理] 已彻底删除用户 {user_id}（含会话记录，列表里不再出现）")
+        return {"status": "ok", "purged": ok}
     ok = _hist(_s).clear(user_id)
     await log_publisher("WARN", f"[上下文管理] 已清空用户 {user_id} 的全部上下文")
     return {"status": "ok", "cleared": ok}
@@ -4835,7 +4892,11 @@ async def nb_get_options():
     def _pack(sc: str) -> Dict[str, Any]:
         pre = "claude_" if sc == "claude" else ""
         return {"notebook_cross_inject": bool(current_config.get(pre + "notebook_cross_inject")),
-                "notebook_cross_allow": [str(x) for x in (current_config.get(pre + "notebook_cross_allow") or [])]}
+                "notebook_cross_allow": [str(x) for x in (current_config.get(pre + "notebook_cross_allow") or [])],
+                "notebook_inject": bool(current_config.get(pre + "notebook_inject", True)),
+                "notebook_top_k": int(current_config.get(pre + "notebook_top_k", 3) or 3),
+                "notebook_inject_chars": int(current_config.get(pre + "notebook_inject_chars", 300) or 300),
+                "notebook_inject_threshold": float(current_config.get(pre + "notebook_inject_threshold", 0) or 0)}
 
     return {"status": "ok", "main": _pack("main"), "claude": _pack("claude"),
             "defaults": {"notebook_cross_inject": False, "notebook_cross_allow": []}}
@@ -4849,18 +4910,36 @@ async def nb_set_options(payload: Dict[str, Any]):
         sc = "main"
     pre = "claude_" if sc == "claude" else ""
     changed = []
-    for k in ("notebook_cross_inject", "notebook_cross_allow"):
+    for k in ("notebook_cross_inject", "notebook_cross_allow",
+              "notebook_inject", "notebook_top_k", "notebook_inject_chars",
+              "notebook_inject_threshold"):
         if k in (payload or {}):
-            current_config[pre + k] = payload[k]
+            _v = payload[k]
+            try:
+                if k in ("notebook_cross_inject", "notebook_inject"):
+                    _v = bool(_v)
+                elif k == "notebook_cross_allow":
+                    _v = [str(x) for x in (_v or [])]
+                elif k in ("notebook_top_k", "notebook_inject_chars"):
+                    _v = max(0, int(_v or 0))
+                elif k == "notebook_inject_threshold":
+                    _v = max(0.0, float(_v or 0))
+            except Exception:
+                continue
+            current_config[pre + k] = _v
             changed.append(pre + k)
     if changed:
         save_config(current_config)
         bot_client.update_config(current_config)
         await log_publisher("SUCCESS", ("[群聊] " if sc == "claude" else "") +
-                            "笔记本跨对话注入已更新：" + ", ".join(changed))
+                            "笔记本参数已更新：" + ", ".join(changed))
     return {"status": "ok", "scope": sc, "changed": changed,
             "options": {"notebook_cross_inject": bool(current_config.get(pre + "notebook_cross_inject")),
-                        "notebook_cross_allow": [str(x) for x in (current_config.get(pre + "notebook_cross_allow") or [])]}}
+                        "notebook_cross_allow": [str(x) for x in (current_config.get(pre + "notebook_cross_allow") or [])]},
+                        "notebook_inject": bool(current_config.get(pre + "notebook_inject", True)),
+                        "notebook_top_k": int(current_config.get(pre + "notebook_top_k", 3) or 3),
+                        "notebook_inject_chars": int(current_config.get(pre + "notebook_inject_chars", 300) or 300),
+                        "notebook_inject_threshold": float(current_config.get(pre + "notebook_inject_threshold", 0) or 0)}
 
 
 @app.get("/api/mem/options")
@@ -5282,6 +5361,7 @@ _STK_KEYS = [
     "sticker_steal_wl", "sticker_steal_bl", "sticker_steal_priority", "sticker_max_mb",
     "sticker_vision_base_url", "sticker_vision_key", "sticker_vision_model",
     "sticker_vision_interval", "sticker_vision_timeout", "sticker_vision_prompt",
+    "sticker_vision_max_tokens",
     "sticker_vision_fallback_transcribe",
 ]
 

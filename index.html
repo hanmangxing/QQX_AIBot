@@ -2245,6 +2245,33 @@
           <span id="nbCrossMsg" class="text-[11px] font-mono text-gray-400"></span>
         </div>
       </div>
+      <button type="button" id="nbRecallBtn" onclick="toggleNbRecall()" class="ml-2 px-3 py-1 rounded bg-amber-900/60 border border-amber-700 text-amber-100 text-xs hover:bg-amber-800/60">
+        <span id="nbRecallArrow">▾ 展开</span> 笔记本自动召回
+      </button>
+      <div id="nbRecall" class="flex-shrink-0 hidden mt-2 rounded-lg border border-borderDark bg-[#0d1117] p-3">
+        <div class="flex items-center gap-2 flex-wrap">
+          <label class="flex items-center gap-1.5 cursor-pointer select-none text-xs text-gray-300">
+            <input type="checkbox" id="nbRecallOn" class="rounded bg-terminal border-borderDark"> 自动召回
+          </label>
+          <span id="nbRecallScope" class="text-[10px] text-gray-500"></span>
+        </div>
+        <div class="mt-2 text-[11px] text-gray-500 leading-relaxed">打开后每次回复前按当前消息检索笔记本，自动带上相关条目——API 不主动调用 <b class="text-gray-300">angel_recall</b> 时也能知道对应内容。阈值 0 = 不过滤，越高越严格。实测分数：精确词命中标题约 3 分、标签约 2.5 分；只靠字面重合的兜底命中在 1.2 分以下，设 1.5 即可滤掉这类。</div>
+        <div class="mt-2 grid grid-cols-3 gap-2">
+          <label class="flex flex-col gap-1 text-[10px] text-gray-500">召回条数
+            <input id="nbRecallTopK" type="number" min="1" max="20" class="bg-[#0d1117] border border-borderDark rounded px-2 py-1 text-[11px] text-gray-200 font-mono">
+          </label>
+          <label class="flex flex-col gap-1 text-[10px] text-gray-500">阈值
+            <input id="nbRecallThr" type="number" min="0" max="10" step="0.5" class="bg-[#0d1117] border border-borderDark rounded px-2 py-1 text-[11px] text-gray-200 font-mono">
+          </label>
+          <label class="flex flex-col gap-1 text-[10px] text-gray-500">每条预览字数
+            <input id="nbRecallChars" type="number" min="50" max="2000" class="bg-[#0d1117] border border-borderDark rounded px-2 py-1 text-[11px] text-gray-200 font-mono">
+          </label>
+        </div>
+        <div class="mt-2 flex items-center gap-2">
+          <button type="button" onclick="saveNbRecall()" class="px-3 py-1 rounded bg-purple-900/60 border border-purple-700 text-purple-100 text-[11px] hover:bg-purple-800/60">保存参数</button>
+          <span id="nbRecallMsg" class="text-[11px] font-mono text-gray-400"></span>
+        </div>
+      </div>
       <div id="nbTestMsg" class="flex-shrink-0 hidden mt-2 text-[11px] font-mono rounded-lg border px-3 py-2"></div>
       <div class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-4 pt-3">
 
@@ -2746,7 +2773,16 @@
               <button type="button" onclick="stkPoolAct('reject')" class="px-2.5 py-1 rounded bg-rose-950/50 border border-rose-800 text-rose-300 text-[11px] hover:bg-rose-900/50">🗑️ 删除</button>
               <span class="text-[10px] text-gray-500">状态流转：待审核 → 排队中 → 识别中 → 已入库 / 识别失败</span>
             </div>
-            <div id="stkPoolGrid" class="flex-1 min-h-0 overflow-y-auto grid grid-cols-2 md:grid-cols-4 gap-3 content-start"></div>
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-[11px] text-gray-500">每行</span>
+              <select id="stkPoolCols" onchange="stkApplyPoolCols(this.value)" class="bg-terminal border border-borderDark focus:border-emerald-500 rounded px-2 py-1 text-xs text-gray-200 outline-none font-mono cursor-pointer">
+                <option value="2">2 列</option><option value="3">3 列</option>
+                <option value="4" selected>4 列</option><option value="5">5 列</option>
+                <option value="6">6 列</option><option value="8">8 列</option>
+              </select>
+              <span class="text-[11px] text-gray-500">（只影响排布，跟别的无关）</span>
+            </div>
+            <div id="stkPoolGrid" style="max-height:calc(100vh - 360px);overflow-y:auto;overflow-x:hidden;grid-auto-rows:min-content" class="flex-1 min-h-0 grid grid-cols-2 md:grid-cols-4 gap-3 content-start"></div>
           </div>
 
           <!-- 表情包库 -->
@@ -2810,6 +2846,24 @@
             <button type="button" onclick="stkClose()" class="text-gray-400 hover:text-gray-200 text-lg leading-none">✕</button>
           </div>
           <div id="stkModalBody"></div>
+        </div>
+      </div>
+
+      <!-- 待审核池：大图查看（WebUI 内看，不用弹出去） -->
+      <div id="stkPoolViewModal" class="hidden fixed inset-0 z-[70] bg-black/85 items-center justify-center p-4" onclick="if(event.target===this)stkPoolViewClose()">
+        <div class="bg-card border border-borderDark rounded-xl p-4 w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl">
+          <div class="flex items-center justify-between mb-3 gap-3">
+            <div id="stkPoolViewMeta" class="text-xs font-mono text-gray-400 truncate"></div>
+            <div class="flex items-center gap-2 shrink-0">
+              <button type="button" onclick="stkPoolViewAct('approve')" class="px-3 py-1.5 rounded bg-emerald-900/60 border border-emerald-700 text-emerald-100 text-xs hover:bg-emerald-800/60">✅ 通过</button>
+              <button type="button" onclick="stkPoolViewAct('reject')" class="px-3 py-1.5 rounded bg-rose-950/60 border border-rose-800 text-rose-200 text-xs hover:bg-rose-900">🗑 删除</button>
+              <button type="button" onclick="stkPoolViewClose()" class="px-3 py-1.5 rounded bg-gray-800 border border-gray-600 text-gray-100 text-xs hover:bg-gray-700">✕ 退出大图</button>
+            </div>
+          </div>
+          <div class="flex-1 min-h-0 overflow-auto flex items-center justify-center bg-black/40 rounded-lg">
+            <img id="stkPoolViewImg" src="" alt="" class="max-w-full max-h-[72vh] object-contain">
+          </div>
+          <div class="mt-2 text-[10px] text-gray-500 text-center">点「退出大图」或点空白处都能关掉</div>
         </div>
       </div>
 
@@ -3027,6 +3081,7 @@
               <label class="flex items-center gap-1">最近 <input id="secRepWindow" type="number" min="2" step="1" class="w-14 bg-gray-900 border border-borderDark rounded px-1.5 py-0.5 text-xs font-mono text-gray-200"> 条里</label>
               <label class="flex items-center gap-1">有 <input id="secRepNeed" type="number" min="2" step="1" class="w-14 bg-gray-900 border border-borderDark rounded px-1.5 py-0.5 text-xs font-mono text-gray-200"> 条一样</label>
               <label class="flex items-center gap-1">同一句冷却 <input id="secRepCooldown" type="number" min="0" step="10" class="w-16 bg-gray-900 border border-borderDark rounded px-1.5 py-0.5 text-xs font-mono text-gray-200"> 秒</label>
+              <label class="flex items-center gap-1">触发概率 <input id="secRepProb" type="number" min="0" max="1" step="0.05" class="w-16 bg-gray-900 border border-borderDark rounded px-1.5 py-0.5 text-xs font-mono text-gray-200">（越接近 1 越容易跟）</label>
               <label class="flex items-center gap-2"><input type="checkbox" id="secDebug" class="accent-purple-500"> 打详细日志</label>
             </div>
             <div class="mt-2 text-xs text-gray-300 font-mono">
@@ -3190,6 +3245,11 @@
                 class="w-full text-left px-3 py-2 rounded-lg text-xs font-mono transition flex items-center justify-between gap-2">
           <span>🕐 时间感知</span>
           <span id="soulNavTimeState" class="text-[10px] px-1.5 py-0.5 rounded border bg-gray-900 text-gray-400 border-gray-700">未启用</span>
+        </button>
+        <button id="soulNavQzone" onclick="soulNav('qzone');qzLoad()"
+                class="w-full text-left px-3 py-2 rounded-lg text-xs font-mono transition flex items-center justify-between gap-2">
+          <span>💬 QQ空间说说</span>
+          <span id="soulNavQzoneState" class="text-[10px] px-1.5 py-0.5 rounded border bg-gray-900 text-gray-400 border-gray-700">未启用</span>
         </button>
         <button id="soulNavCoyote" onclick="soulNav('coyote');cyFill();cyPoll()"
                 class="w-full text-left px-3 py-2 rounded-lg text-xs font-mono transition flex items-center justify-between gap-2">
@@ -3458,7 +3518,23 @@
         </div>
       </div>
       <div class="p-3 rounded-lg border border-borderDark bg-[#0a0e14] mb-3">
-        <div class="text-xs text-gray-200 font-bold mb-2">夜间（0 点到 8 点）</div>
+        <div class="p-3 rounded-lg border border-borderDark bg-[#0a0e14] mb-3">
+        <div class="text-xs text-gray-200 font-bold mb-2">💗 单独思念（指定 ID 各算一份）</div>
+        <label class="flex items-center gap-2 cursor-pointer text-xs text-gray-200">
+          <input id="idSoloOn" type="checkbox"> 启用单独思念
+        </label>
+        <div class="mt-2">
+          <label class="block text-gray-400 mb-1 text-[11px]">思念对象（一行一个；私聊直接填 QQ 号，群填「群:群号」）</label>
+          <textarea id="idSoloIds" rows="4" placeholder="123456789&#10;群:987654321" class="w-full bg-terminal border border-borderDark rounded px-2 py-1 text-gray-200 text-[11px]"></textarea>
+        </div>
+        <div class="grid grid-cols-2 gap-3 mt-2">
+          <div><label class="block text-gray-400 mb-1 text-[11px]">单独冷却（小时）</label><input id="idSoloCool" type="number" min="0" step="0.5" class="w-full bg-terminal border border-borderDark rounded px-2 py-1 text-gray-200 text-[11px]"></div>
+          <div><label class="block text-gray-400 mb-1 text-[11px]">每人每天最多几次</label><input id="idSoloMax" type="number" min="0" class="w-full bg-terminal border border-borderDark rounded px-2 py-1 text-gray-200 text-[11px]"></div>
+        </div>
+        <div class="text-[10px] text-gray-500 mt-2">这些 ID 各算各的闲置时长、概率、冷却和每日次数，互不干扰，命中后发给对应的那个会话；名单里的 ID 不再占用上面那条全局通道。</div>
+        <div id="idSoloState" class="text-[10px] text-gray-400 mt-2"></div>
+      </div>
+      <div class="text-xs text-gray-200 font-bold mb-2">夜间（0 点到 8 点）</div>
         <div class="grid grid-cols-3 gap-3">
           <div><label class="block text-gray-400 mb-1 text-[11px]">夜间起</label><input id="idNightStart" type="number" min="0" max="23" class="w-full bg-terminal border border-borderDark rounded px-2 py-1 text-gray-200"></div>
           <div><label class="block text-gray-400 mb-1 text-[11px]">夜间止</label><input id="idNightEnd" type="number" min="0" max="24" class="w-full bg-terminal border border-borderDark rounded px-2 py-1 text-gray-200"></div>
@@ -3557,6 +3633,10 @@
           <input type="checkbox" id="timeInjectEnabled" class="rounded bg-terminal border-borderDark text-cyan-500 focus:ring-0">
           <span>让 AI 知道「现在」是几号几点</span>
         </label>
+        <label class="flex items-center space-x-2 text-xs font-mono text-gray-300 cursor-pointer select-none mt-2">
+          <input type="checkbox" id="timeInjectGroup" class="rounded bg-terminal border-borderDark text-cyan-500 focus:ring-0">
+          <span>群聊也生效（勾了就注入，不看群聊人设档）</span>
+        </label>
         <textarea id="timeInjectTmpl" rows="5" placeholder="留空 = 用内置默认文案" class="mt-2.5 w-full bg-terminal border border-borderDark focus:border-cyan-500 rounded-lg px-2 py-1.5 text-gray-200 font-mono text-[11px] leading-relaxed"></textarea>
         <p class="text-[10px] text-gray-500 mt-2 leading-relaxed">
           占位符：<code class="text-cyan-300">{time}</code> 2026年10月15日 星期三 12:45 ·
@@ -3572,6 +3652,47 @@
         </div>
         <div id="timeInjectMsg" class="hidden mt-2 text-[11px] font-mono rounded-lg border px-3 py-2"></div>
       </div>    </div>
+
+    <div id="soulPaneQzone" class="hidden">
+      <div class="">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-2">
+          <span class="text-violet-400">魂</span><span>· QQ空间说说</span>
+        </h2>
+        <p class="text-[10px] text-gray-500 mb-3 leading-relaxed">心情爆表时，用一次「不进对话」的专用调用，让它自己去发条说说。登录态借协议端现取，不用配账号密码。</p>
+      <div class="p-3 rounded-lg border border-borderDark bg-[#0a0e14] mb-3">
+        <label class="flex items-center gap-2 cursor-pointer text-xs text-gray-200">
+          <input id="qzEnabled" type="checkbox"> 启用 QQ空间说说
+        </label>
+      </div>
+        <div class="grid grid-cols-2 gap-3 mt-3">
+          <label class="text-[11px] text-gray-400">精力阈值
+            <input type="number" id="qzEnergy" min="0" max="100" class="mt-1 w-full bg-terminal border border-borderDark focus:border-cyan-500 rounded-lg px-2 py-1.5 text-xs font-mono text-gray-200 text-gray-200"></label>
+          <label class="text-[11px] text-gray-400">心情阈值（情绪值）
+            <input type="number" id="qzMood" min="0" max="100" class="mt-1 w-full bg-terminal border border-borderDark focus:border-cyan-500 rounded-lg px-2 py-1.5 text-xs font-mono text-gray-200 text-gray-200"></label>
+          <label class="text-[11px] text-gray-400">发送权重 0-100（越大越容易抽中发送）
+            <input type="number" id="qzWeight" min="0" max="100" class="mt-1 w-full bg-terminal border border-borderDark focus:border-cyan-500 rounded-lg px-2 py-1.5 text-xs font-mono text-gray-200 text-gray-200"></label>
+          <label class="text-[11px] text-gray-400">冷却（分钟）
+            <input type="number" id="qzCool" min="0" class="mt-1 w-full bg-terminal border border-borderDark focus:border-cyan-500 rounded-lg px-2 py-1.5 text-xs font-mono text-gray-200 text-gray-200"></label>
+        </div>
+        <label class="flex items-center space-x-2 text-xs font-mono text-gray-300 cursor-pointer select-none mt-3">
+          <input type="checkbox" id="qzImages" class="rounded bg-terminal border-borderDark text-cyan-500 focus:ring-0">
+          <span>带上它自己挑的表情包</span>
+        </label>
+        <div class="mt-3 text-[11px] text-gray-400">写说说的注入提示词</div>
+        <textarea id="qzPrompt" rows="6" placeholder="留空 = 用内置默认文案" class="mt-1.5 w-full bg-terminal border border-borderDark focus:border-cyan-500 rounded-lg px-3 py-2 text-xs font-mono text-gray-200 leading-relaxed"></textarea>
+        <p class="text-[10px] text-gray-500 mt-2 leading-relaxed">
+          占位符：<code class="text-cyan-300">{tag}</code> 正则块标签 ·
+          <code class="text-cyan-300">{energy}</code> <code class="text-cyan-300">{lust}</code> <code class="text-cyan-300">{mood}</code> 当前数值 ·
+          <code class="text-cyan-300">{word}</code> <code class="text-cyan-300">{desc}</code> 情绪关键词 ·
+          <code class="text-cyan-300">{hint}</code> 这轮让它开心的事
+        </p>
+        <div class="flex items-center gap-2 mt-3 flex-wrap">
+          <button type="button" onclick="qzSave()" class="px-3 py-1.5 rounded bg-emerald-900/60 border border-emerald-700 text-emerald-100 text-xs hover:bg-emerald-800/60">保存</button>
+          <button type="button" onclick="qzReset()" class="px-3 py-1.5 rounded bg-rose-900/60 border border-rose-700 text-rose-100 text-xs hover:bg-rose-800/60">恢复默认提示词</button>
+          <span id="qzMsg" class="text-[10px] font-mono text-gray-500 ml-auto"></span>
+        </div>
+      </div>
+    </div>
 
     <div id="soulPaneCoyote" class="hidden">
       <div class="">
@@ -3771,6 +3892,14 @@
             <input id="llmBaseUrl" type="text" placeholder="https://gcli.ggchan.dev" class="w-full bg-terminal border border-borderDark focus:border-cyan-500 rounded-lg px-3 py-1.5 text-gray-200 outline-none transition">
           </div>
 
+          <!-- 用识图模型转述图片（给没有多模态能力的主对话模型） -->
+          <label class="flex items-start gap-2 cursor-pointer text-xs text-gray-300">
+            <input id="mainVisionTranscribe" type="checkbox" class="mt-0.5 rounded bg-terminal border-borderDark text-cyan-500 focus:ring-0">
+            <span>使用表情包识图模型转述图片
+              <span class="block text-[10px] text-gray-500 leading-relaxed mt-0.5">勾选后，所有发给主对话 API 的图片 / 表情包都会先交给「表情包识图模型」写成文字再发出去，给没有多模态能力的模型用。每张图会多花一次识图时间。</span>
+            </span>
+          </label>
+
           <!-- API Key -->
           <div>
             <label class="block text-gray-400 mb-1">API Key</label>
@@ -3861,6 +3990,11 @@
               <input id="stkVisionTimeout" type="number" min="10" step="10" class="w-full bg-terminal border border-borderDark rounded-lg px-3 py-1.5 text-gray-200 outline-none">
             </div>
             <div>
+            <div>
+              <label class="block text-gray-400 mb-1">思维链上限 (max_tokens)</label>
+              <input id="stkVisionMaxTokens" type="number" min="512" step="512" placeholder="8192" class="w-full bg-terminal border border-borderDark rounded-lg px-3 py-1.5 text-gray-200 outline-none font-mono">
+              <div class="text-[10px] text-gray-500 mt-1">给思维链留的额度。报「识图模型没吐内容」多半是这里给小了 —— qwen3-vl 会先输出一大段思考。</div>
+            </div>
               <label class="block text-gray-400 mb-1">识图间隔 (秒)</label>
               <input id="stkVisionInterval" type="number" min="0" step="1" class="w-full bg-terminal border border-borderDark rounded-lg px-3 py-1.5 text-gray-200 outline-none">
             </div>
@@ -4153,6 +4287,7 @@
         document.getElementById('llmModel').value = cfg.llm_model || '';
         document.getElementById('temperature').value = cfg.temperature ?? 0.7;
         document.getElementById('llmStream').checked = !!cfg.llm_stream;
+        document.getElementById('mainVisionTranscribe').checked = !!cfg.main_vision_transcribe;
         document.getElementById('napcatCmd').value = cfg.napcat_cmd || '';
         document.getElementById('napcatWsUrl').value = cfg.napcat_ws_url || '';
         // 协议端：按配置把 UI 调成对应形态（SnowLuma 模式隐藏 NapCat 专属部分）
@@ -4280,6 +4415,7 @@
         llm_model: document.getElementById('llmModel').value.trim(),
         temperature: parseFloat(document.getElementById('temperature').value) || 0.7,
         llm_stream: !!(document.getElementById('llmStream') || {}).checked,
+        main_vision_transcribe: !!(document.getElementById('mainVisionTranscribe') || {}).checked,
         napcat_cmd: document.getElementById('napcatCmd').value.trim(),
         napcat_ws_url: document.getElementById('napcatWsUrl').value.trim(),
         snowluma_cmd: (document.getElementById('snowlumaCmd') || {}).value ? document.getElementById('snowlumaCmd').value.trim() : '',
@@ -5388,6 +5524,26 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ entries: worldBookEntries })
         });
+        if (data.status === 'need_confirm') {
+          if (quiet) {
+            appendLog('WARN', '⚠ 世界书已经变成 0 条，自动保存已拦下；确实要清空就点「保存」按钮确认。');
+            return;
+          }
+          if (!confirm(data.message + '\n\n确定要清空吗？清空后可以从配置档切回来。')) {
+            appendLog('INFO', '已取消清空，世界书保持原样。');
+            return;
+          }
+          const res2 = await fetch('/api/world_book', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ entries: worldBookEntries, force_empty: true })
+          });
+          const data2 = await res2.json();
+          if (!res2.ok) { appendLog('ERROR', '保存世界书失败: ' + (data2.message || '未知错误')); return; }
+          appendLog('SUCCESS', '世界书已清空（0 条）');
+          updateWorldBookStats();
+          return;
+        }
         const data = await res.json();
         if (res.ok) {
           if (!quiet) appendLog('SUCCESS', `世界书设定已成功保存并热重载（当前共 ${worldBookEntries.length} 条）`);
@@ -5643,6 +5799,7 @@
       set('secRepWindow', c.sec_repeat_window != null ? c.sec_repeat_window : 6);
       set('secRepNeed', c.sec_repeat_need != null ? c.sec_repeat_need : 3);
   set('secRepCooldown', c.sec_repeat_cooldown != null ? c.sec_repeat_cooldown : 120);
+      set('secRepProb', c.sec_repeat_prob != null ? c.sec_repeat_prob : 0.6);
       chk('secDebug', c.sec_debug);
       chk('secCallEnabled', c.claude_call_mode_enabled !== false);
       set('secCallMinutes', c.claude_call_mode_minutes != null ? c.claude_call_mode_minutes : 5);
@@ -5678,6 +5835,7 @@
         sec_repeat_window: parseInt((document.getElementById('secRepWindow') || {}).value || '6', 10),
         sec_repeat_need: parseInt((document.getElementById('secRepNeed') || {}).value || '3', 10),
   sec_repeat_cooldown: (function(){var v = parseInt((document.getElementById('secRepCooldown') || {}).value, 10); return isNaN(v) ? 120 : v;})(),
+        sec_repeat_prob: (function(){var v = parseFloat((document.getElementById('secRepProb') || {}).value); return isNaN(v) ? 0.6 : Math.max(0, Math.min(1, v));})(),
         sec_debug: !!(document.getElementById('secDebug') || {}).checked,
         claude_call_mode_enabled: !!((document.getElementById('secCallEnabled') || {}).checked),
         claude_call_mode_minutes: (function(){var v = parseInt((document.getElementById('secCallMinutes') || {}).value, 10); return isNaN(v) ? 5 : Math.max(1, Math.min(180, v));})(),
@@ -5869,6 +6027,7 @@
         set('stkVisionModel', d.vision_model);
         { const _vf = document.getElementById('stkVisionFallback'); if (_vf) _vf.checked = !!d.vision_fallback_transcribe; }
         set('stkVisionTimeout', d.vision_timeout);
+      set('stkVisionMaxTokens', d.vision_max_tokens);
         set('stkVisionInterval', d.vision_interval);
         set('stkVisionPrompt', d.vision_prompt);
         const st = document.getElementById('stkStat');
@@ -6016,7 +6175,8 @@
         sticker_vision_base_url: document.getElementById('stkVisionBase').value.trim(),
         sticker_vision_key: document.getElementById('stkVisionKey').value.trim(),
         sticker_vision_model: document.getElementById('stkVisionModel').value.trim(),
-        sticker_vision_timeout: parseFloat(document.getElementById('stkVisionTimeout').value || '180'),
+        sticker_vision_timeout: parseFloat(document.getElementById('stkVisionTimeout').value || '600'),
+        sticker_vision_max_tokens: parseInt((document.getElementById('stkVisionMaxTokens') || {}).value || '8192', 10),
         sticker_vision_interval: parseFloat(document.getElementById('stkVisionInterval').value || '5'),
         sticker_vision_prompt: document.getElementById('stkVisionPrompt').value,
         sticker_vision_fallback_transcribe: !!(document.getElementById('stkVisionFallback') || {}).checked
@@ -6098,7 +6258,7 @@
           const sel = stkSelPool[it.sid] ? ' checked' : '';
           return '<div class="bg-gray-900/60 border border-gray-800 rounded-lg overflow-hidden">'
             + '<div class="relative">'
-            + '<img src="/api/sticker/file/' + stkEsc(it.sid) + '" alt="" class="w-full h-28 object-contain bg-black/40 cursor-zoom-in" onclick="window.open(this.src)">'
+            + '<img src="/api/sticker/file/' + stkEsc(it.sid) + '" alt="" style="width:100%;aspect-ratio:4/3;object-fit:contain;display:block" class="bg-black/40 cursor-zoom-in" onclick="stkPoolView(\'' + stkEsc(it.sid) + '\')">'
             + '<input type="checkbox"' + sel + ' onchange="stkSel(this,\'' + stkEsc(it.sid) + '\')" class="absolute top-1.5 left-1.5 w-4 h-4 accent-emerald-500">'
             + '<span class="absolute top-1.5 right-1.5">' + stkBadge(s[0], s[1]) + '</span>'
             + '</div>'
@@ -6117,6 +6277,43 @@
       } catch (e) {
         grid.innerHTML = '<div class="col-span-full text-center py-10 text-rose-400 text-xs">读取失败: ' + stkEsc(e.message) + '</div>';
       }
+    }
+    let stkPoolViewSid = '';
+    function stkPoolView(sid) {
+      stkPoolViewSid = sid || '';
+      const m = document.getElementById('stkPoolViewModal');
+      const im = document.getElementById('stkPoolViewImg');
+      const meta = document.getElementById('stkPoolViewMeta');
+      if (!m || !im) return;
+      im.src = '/api/sticker/file/' + encodeURIComponent(stkPoolViewSid);
+      const it = (stkPoolCache || []).filter(function (v) { return v.sid === stkPoolViewSid; })[0] || {};
+      if (meta) meta.textContent = (stkSrc(it) || '') + ' · ' + (stkKindText(it.kinds) || it.kind || '')
+        + ' · ' + Math.round((it.size || 0) / 1024) + 'KB · ' + String(it.created_at || '').slice(5, 16);
+      m.classList.remove('hidden');
+      m.classList.add('flex');
+    }
+    function stkPoolViewClose() {
+      const m = document.getElementById('stkPoolViewModal');
+      const im = document.getElementById('stkPoolViewImg');
+      if (m) { m.classList.add('hidden'); m.classList.remove('flex'); }
+      if (im) im.src = '';
+    }
+    function stkPoolViewAct(act) {
+      if (!stkPoolViewSid) return;
+      const sid = stkPoolViewSid;
+      stkPoolViewClose();
+      stkPoolAct(act, [sid]);
+    }
+    function stkApplyPoolCols(n, silent) {
+      n = parseInt(n || '4', 10) || 4;
+      const g = document.getElementById('stkPoolGrid');
+      if (g) {
+        const base = g.className.replace(/\bmd:grid-cols-\d+\b/g, '').replace(/\bgrid-cols-\d+\b/g, '').replace(/\s+/g, ' ').trim();
+        g.className = base + ' grid-cols-2 md:grid-cols-' + n;
+      }
+      const sel = document.getElementById('stkPoolCols');
+      if (sel) sel.value = String(n);
+      if (!silent) { try { localStorage.setItem('stk_pool_cols', String(n)); } catch (e) {} }
     }
     function stkSel(el, sid) {
       if (el.checked) stkSelPool[sid] = true; else delete stkSelPool[sid];
@@ -7522,14 +7719,14 @@
 
     // ---------- 删除整个用户 ----------
     async function deleteChatUser(userId) {
-      if (!confirm('删除用户 ' + userId + ' 的全部聊天记录？此操作不可撤销。')) return;
+      if (!confirm('删除用户 ' + userId + '？聊天记录和会话都会一起删掉，此操作不可撤销。')) return;
       try {
         const _c = (conversations || []).find(x => String(x.user_id) === String(userId));
         const _sc = (_c && _c.from_scope) ? _c.from_scope : 'main';
-        const res = await fetch('/api/history/' + encodeURIComponent(userId) + '?scope=' + _sc, { method: 'DELETE' });
+        const res = await fetch('/api/history/' + encodeURIComponent(userId) + '?scope=' + _sc + '&purge=1', { method: 'DELETE' });
         const data = await res.json();
         if (data.status !== 'ok') { appendLog('ERROR', '删除用户失败：' + (data.status || 'unknown')); return; }
-        appendLog('WARN', '已删除用户 ' + userId + ' 的全部聊天记录');
+        appendLog('WARN', '已删除用户 ' + userId + '（聊天记录 + 会话列表里的这条）');
         if (String(currentUserId) === String(userId)) {
           currentUserId = null;
           const box = document.getElementById('chatMessages');
@@ -7975,6 +8172,7 @@
       // 「全部」是合并视图，笔记本参数收起来（跟记忆库那边的处理一致）
       const _nbBtn = document.getElementById('nbCrossBtn');
       if (_nbBtn) _nbBtn.style.display = (nbScope === 'all') ? 'none' : '';
+  const _nbRBtn = document.getElementById('nbRecallBtn'); if (_nbRBtn) _nbRBtn.style.display = (nbScope === 'all') ? 'none' : '';
       if (nbScope === 'all') {
         const _bx = document.getElementById('nbCross');
         if (_bx) _bx.classList.add('hidden');
@@ -7989,7 +8187,8 @@
       nbCur = null;
       try { await nbLoad(); } catch (e) {}
       const box = document.getElementById('nbCross');
-      if (box && !box.classList.contains('hidden')) loadNbCross();
+      const _rbox = document.getElementById('nbRecall');
+  if ((box && !box.classList.contains('hidden')) || (_rbox && !_rbox.classList.contains('hidden'))) loadNbCross();
     }
 
     // ---------- 笔记本参数：跨对话注入 ----------
@@ -8039,6 +8238,16 @@
         nbCrossAllow = (o.notebook_cross_allow || []).map(String);
         renderNbCrossAllow();
         toggleNbCrossInject();
+        const _rOn = document.getElementById('nbRecallOn');
+        if (_rOn) _rOn.checked = (o.notebook_inject !== false);
+        const _rK = document.getElementById('nbRecallTopK');
+        if (_rK) _rK.value = (o.notebook_top_k != null ? o.notebook_top_k : 3);
+        const _rT = document.getElementById('nbRecallThr');
+        if (_rT) _rT.value = (o.notebook_inject_threshold != null ? o.notebook_inject_threshold : 0);
+        const _rC = document.getElementById('nbRecallChars');
+        if (_rC) _rC.value = (o.notebook_inject_chars != null ? o.notebook_inject_chars : 300);
+        const _rS = document.getElementById('nbRecallScope');
+        if (_rS) _rS.textContent = isC ? '（群聊模式，与主 Bot 独立）' : '（主 Bot，与群聊独立）';
       } catch (e) {
         const m = document.getElementById('nbCrossMsg');
         if (m) { m.textContent = '读取失败：' + e.message; m.className = 'text-[11px] font-mono text-rose-400'; }
@@ -8061,6 +8270,37 @@
         renderNbCrossAllow();
         if (m) { m.textContent = '已保存' + (nbScope === 'claude' ? '（群聊）' : '（主 Bot）'); m.className = 'text-[11px] font-mono text-emerald-400'; }
         appendLog('SUCCESS', '[笔记本] 跨对话注入设置已保存并热加载' + (nbScope === 'claude' ? '（群聊模式）' : '（主 Bot）'));
+      } catch (e) {
+        if (m) { m.textContent = '保存失败：' + e.message; m.className = 'text-[11px] font-mono text-rose-400'; }
+      }
+    }
+
+    function toggleNbRecall() {
+      const box = document.getElementById('nbRecall');
+      const arrow = document.getElementById('nbRecallArrow');
+      const hidden = box.classList.toggle('hidden');
+      if (arrow) arrow.textContent = hidden ? '▾ 展开' : '▴ 收起';
+      if (!hidden) loadNbCross();
+    }
+
+    async function saveNbRecall() {
+      const m = document.getElementById('nbRecallMsg');
+      try {
+        const k = parseInt(document.getElementById('nbRecallTopK').value, 10);
+        const t = parseFloat(document.getElementById('nbRecallThr').value);
+        const c = parseInt(document.getElementById('nbRecallChars').value, 10);
+        const r = await fetch('/api/nb/options', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scope: nbScope === 'claude' ? 'claude' : 'main',
+                                 notebook_inject: document.getElementById('nbRecallOn').checked,
+                                 notebook_top_k: isNaN(k) ? 3 : k,
+                                 notebook_inject_threshold: isNaN(t) ? 0 : t,
+                                 notebook_inject_chars: isNaN(c) ? 300 : c })
+        });
+        const d = await r.json();
+        if (d.status !== 'ok') throw new Error(d.message || '保存失败');
+        if (m) { m.textContent = '已保存' + (nbScope === 'claude' ? '（群聊）' : '（主 Bot）'); m.className = 'text-[11px] font-mono text-emerald-400'; }
+        appendLog('SUCCESS', '[笔记本] 自动召回参数已保存并热加载' + (nbScope === 'claude' ? '（群聊模式）' : '（主 Bot）'));
       } catch (e) {
         if (m) { m.textContent = '保存失败：' + e.message; m.className = 'text-[11px] font-mono text-rose-400'; }
       }
@@ -8429,9 +8669,9 @@
         const r = await fetch('/api/world_book/profiles?scope=' + encodeURIComponent(wbScope || 'main'));
         const d = await r.json();
         WB_PROFILES = d.profiles || [];
-        const cur = keep !== undefined ? keep : sel.value;
+        const cur = keep !== undefined ? keep : (d.active || sel.value);
         sel.innerHTML = WB_PROFILES.length
-          ? WB_PROFILES.map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}（${p.count} 条）</option>`).join('')
+          ? WB_PROFILES.map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}（${p.count} 条）${p.name === d.active ? ' ✅ 当前' : ''}</option>`).join('')
           : '<option value="">-- 还没有保存的配置档 --</option>';
         if (cur && WB_PROFILES.some(p => p.name === cur)) sel.value = cur;
       } catch (e) { wbProfileMsg('读取配置档失败：' + e.message, false); }
@@ -8447,6 +8687,18 @@
           body: JSON.stringify({ scope: wbScope || 'main', name: name })
         });
         const d = await r.json();
+        if (d.status === 'need_confirm') {
+          if (!confirm(d.message + '\n\n确定要切换到这个空配置档吗？')) { wbProfileMsg('已取消切换', false); return; }
+          const r2 = await fetch('/api/world_book/profiles/apply', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scope: wbScope || 'main', name: name, force_empty: true })
+          });
+          const d2 = await r2.json();
+          if (d2.status !== 'ok') throw new Error(d2.message || '切换失败');
+          await fetchWorldBook();
+          wbProfileMsg('已切换到：' + name, true);
+          return;
+        }
         if (d.status !== 'ok') throw new Error(d.message || '切换失败');
         await fetchWorldBook();
         wbProfileMsg('已切换到：' + name, true);
@@ -8677,13 +8929,16 @@
       const tm = document.getElementById('timeInjectTmpl');
       if (en) en.checked = c.time_inject_enabled !== false;
       if (tm) tm.value = c.time_inject_tmpl || '';
+      const tg = document.getElementById('timeInjectGroup');
+      if (tg) tg.checked = c.time_inject_group !== false;
     } catch (e) { /* 读不到就保持默认展示 */ }
     timeTickNow();
   }
   async function timeSaveCfg() {
     const payload = {
       time_inject_enabled: !!document.getElementById('timeInjectEnabled').checked,
-      time_inject_tmpl: document.getElementById('timeInjectTmpl').value
+      time_inject_tmpl: document.getElementById('timeInjectTmpl').value,
+      time_inject_group: !!document.getElementById('timeInjectGroup').checked
     };
     try {
       const r = await fetch('/api/config', {
@@ -8700,6 +8955,61 @@
     if (!confirm('清空自定义文案、恢复成内置默认？')) return;
     document.getElementById('timeInjectTmpl').value = '';
     await timeSaveCfg();
+  }
+  function qzCls(on) {
+    return 'text-[10px] px-1.5 py-0.5 rounded border ' + (on
+      ? 'bg-emerald-950 text-emerald-400 border-emerald-800'
+      : 'bg-gray-900 text-gray-400 border-gray-700');
+  }
+  async function qzLoad() {
+    try {
+      const r = await fetch('/api/config');
+      const d = await r.json();
+      const c = (d && d.config) ? d.config : ((d && d.data) ? d.data : d) || {};
+      const g = (i) => document.getElementById(i);
+      if (g('qzEnabled')) g('qzEnabled').checked = c.qzone_enabled !== false;
+      if (g('qzImages')) g('qzImages').checked = c.qzone_send_images !== false;
+      if (g('qzEnergy')) g('qzEnergy').value = (c.qzone_trigger_energy_min != null ? c.qzone_trigger_energy_min : 90);
+      if (g('qzMood')) g('qzMood').value = (c.qzone_trigger_mood_min != null ? c.qzone_trigger_mood_min : 90);
+      if (g('qzWeight')) g('qzWeight').value = (c.qzone_post_weight != null ? c.qzone_post_weight : 50);
+      if (g('qzCool')) g('qzCool').value = (c.qzone_post_cooldown_min != null ? c.qzone_post_cooldown_min : 180);
+      if (g('qzPrompt')) g('qzPrompt').value = c.qzone_post_prompt || '';
+      const ns = document.getElementById('soulNavQzoneState');
+      if (ns) { ns.textContent = (c.qzone_enabled !== false) ? '已启用' : '未启用'; ns.className = qzCls(c.qzone_enabled !== false); }
+    } catch (e) { /* 读不到就保持默认展示 */ }
+  }
+  function qzMsg(t, bad) {
+    const o = document.getElementById('qzMsg');
+    if (!o) return;
+    o.textContent = t;
+    o.className = 'text-[10px] font-mono ml-auto ' + (bad ? 'text-rose-400' : 'text-emerald-400');
+  }
+  async function qzSave() {
+    const g = (i) => document.getElementById(i);
+    const payload = {
+      qzone_enabled: !!g('qzEnabled').checked,
+      qzone_send_images: !!g('qzImages').checked,
+      qzone_trigger_energy_min: parseInt(g('qzEnergy').value || 90, 10),
+      qzone_trigger_mood_min: parseInt(g('qzMood').value || 90, 10),
+      qzone_post_weight: parseInt(g('qzWeight').value || 50, 10),
+      qzone_post_cooldown_min: parseInt(g('qzCool').value || 180, 10),
+      qzone_post_prompt: g('qzPrompt').value
+    };
+    try {
+      const r = await fetch('/api/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+      });
+      const d = await r.json();
+      if (d && d.status === 'error') throw new Error(d.message || '服务端拒绝');
+      qzMsg(payload.qzone_enabled ? '已保存：到阈值会自己去发说说' : '已保存：已关闭', false);
+      const ns = document.getElementById('soulNavQzoneState');
+      if (ns) { ns.textContent = payload.qzone_enabled ? '已启用' : '未启用'; ns.className = qzCls(payload.qzone_enabled); }
+    } catch (e) { qzMsg('保存失败：' + e.message, true); }
+  }
+  async function qzReset() {
+    if (!confirm('清空自定义提示词、恢复成内置默认？')) return;
+    document.getElementById('qzPrompt').value = '';
+    await qzSave();
   }
   document.addEventListener('DOMContentLoaded', () => { try { timeLoadCfg(); } catch (e) {} });
   setInterval(timeTickNow, 20000);
@@ -10177,6 +10487,7 @@ async function presetToggleOn(id, on) {
         const b = document.getElementById('soulNavTimeState');
         if (b) {
           b.textContent = (c.time_inject_enabled !== false && !!c.time_inject_enabled) ? '已启用' : '未启用';
+      qzLoad();   // 空间栏的徽标也随页面加载刷新
           b.className = 'text-[10px] px-1.5 py-0.5 rounded border '
             + ((c.time_inject_enabled !== false && !!c.time_inject_enabled)
                ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800' : 'bg-gray-900 text-gray-400 border-gray-700');
@@ -10297,6 +10608,10 @@ async function presetToggleOn(id, on) {
       set('idWRecall', c.idle_weight_recall != null ? c.idle_weight_recall : 50);
       set('idMaxDay', c.idle_max_per_day != null ? c.idle_max_per_day : 3);
       set('idChatRate', c.idle_chat_recall_rate != null ? c.idle_chat_recall_rate : 0.08);
+      chk('idSoloOn', c.idle_solo_enabled !== false);
+      { const _e = document.getElementById('idSoloIds'); if (_e) { const _v = c.idle_solo_ids; _e.value = Array.isArray(_v) ? _v.join('\n') : (_v || ''); } }
+      set('idSoloCool', c.idle_solo_cooldown_hours != null ? c.idle_solo_cooldown_hours : 6);
+      set('idSoloMax', c.idle_solo_max_per_day != null ? c.idle_solo_max_per_day : 1);
       set('idPromptIdle', c.idle_prompt_idle || ID_DEF.prompt_idle);
       set('idPromptRecall', c.idle_prompt_recall || ID_DEF.prompt_recall);
       set('idPromptChat', c.idle_prompt_chat_recall || ID_DEF.prompt_chat);
@@ -10321,6 +10636,10 @@ async function presetToggleOn(id, on) {
         idle_weight_idle: Math.max(0, parseInt(num('idWIdle', 50), 10) || 0),
         idle_weight_recall: Math.max(0, parseInt(num('idWRecall', 50), 10) || 0),
         idle_max_per_day: Math.max(0, parseInt(num('idMaxDay', 3), 10) || 0),
+      idle_solo_enabled: !!(document.getElementById('idSoloOn') || {}).checked,
+      idle_solo_ids: (((document.getElementById('idSoloIds') || {}).value || '').split('\n')).map(function (x) { return x.trim(); }).filter(function (x) { return x; }),
+      idle_solo_cooldown_hours: Math.max(0, num('idSoloCool', 6)),
+      idle_solo_max_per_day: Math.max(0, parseInt(num('idSoloMax', 1), 10) || 0),
         idle_chat_recall_rate: Math.max(0, Math.min(1, num('idChatRate', 0.08))),
         idle_prompt_idle: txt('idPromptIdle'),
         idle_prompt_recall: txt('idPromptRecall'),
@@ -10354,7 +10673,19 @@ async function presetToggleOn(id, on) {
         idFill(c);
         idBadge(!!d.enabled);
         if (box) {
-          box.innerHTML = '已闲置 <b class="text-gray-200">' + (d.idle_hours || 0) + '</b> 小时｜当前概率 <b class="text-gray-200">'
+          try {
+        var _solo = d.solo || [], _sl = [];
+        for (var _i = 0; _i < _solo.length; _i++) {
+          var _o = _solo[_i];
+          _sl.push('<div class="mt-0.5">' + (_o.kind === 'group' ? '群 ' : '私聊 ') + _o.chat_id
+            + (_o.who ? '（' + _o.who + '）' : '') + '：已闲置 ' + _o.idle_hours + ' 小时｜概率 '
+            + Math.round((_o.rate_now || 0) * 100) + '%｜今天已发 ' + (_o.day_count || 0) + ' 次'
+            + (_o.ready ? '' : '（还没到闲置门槛）') + '</div>');
+        }
+        var _sb = document.getElementById('idSoloState');
+        if (_sb) _sb.innerHTML = _solo.length ? ('<div class="text-gray-300 mb-1">单独思念：</div>' + _sl.join('')) : '单独思念：还没填 ID，或这些 ID 还没说过话';
+      } catch (_e) {}
+      box.innerHTML = '已闲置 <b class="text-gray-200">' + (d.idle_hours || 0) + '</b> 小时｜当前概率 <b class="text-gray-200">'
             + Math.round((d.rate_now || 0) * 100) + '%</b>｜' + (d.night ? '夜间' : '白天')
             + '｜今天已主动 ' + (d.day_count || 0) + ' 次'
             + (d.chat_id ? '｜会发到 ' + (d.kind === 'group' ? '群 ' : '私聊 ') + d.chat_id : '｜还没有聊过天');
@@ -10509,8 +10840,8 @@ async function presetToggleOn(id, on) {
     let soulNow = 'debounce';
     function soulNav(name) {
       soulNow = name || 'debounce';
-      const panes = { debounce: 'soulPaneDebounce', segment: 'soulPaneSegment', poke: 'soulPanePoke' , activemsg: 'soulPaneAm', idle: 'soulPaneIdle', mood: 'soulPaneMood', time: 'soulPaneTime', coyote: 'soulPaneCoyote' };
-      const navs = { debounce: 'soulNavDebounce', segment: 'soulNavSegment', poke: 'soulNavPoke' , activemsg: 'soulNavAm' , idle: 'soulNavIdle', mood: 'soulNavMood', time: 'soulNavTime', coyote: 'soulNavCoyote' };
+      const panes = { qzone: 'soulPaneQzone', debounce: 'soulPaneDebounce', segment: 'soulPaneSegment', poke: 'soulPanePoke' , activemsg: 'soulPaneAm', idle: 'soulPaneIdle', mood: 'soulPaneMood', time: 'soulPaneTime', coyote: 'soulPaneCoyote' };
+      const navs = { qzone: 'soulNavQzone', debounce: 'soulNavDebounce', segment: 'soulNavSegment', poke: 'soulNavPoke' , activemsg: 'soulNavAm' , idle: 'soulNavIdle', mood: 'soulNavMood', time: 'soulNavTime', coyote: 'soulNavCoyote' };
       Object.keys(panes).forEach(k => {
         const p = document.getElementById(panes[k]);
         if (p) p.classList.toggle('hidden', k !== soulNow);
@@ -11074,6 +11405,7 @@ setInterval(cyPoll, 5000);
       }
     }
     try { stkApplyCols(localStorage.getItem('stk_cols') || '4', true); } catch (e) {}
+      try { stkApplyPoolCols(localStorage.getItem('stk_pool_cols') || '4', true); } catch (e) {}
     // 群聊页签：按业界标准拉取远端模型列表（和 API 配置页签同一套接口 /api/models）
     async function fetchClaudeModels() {
       const base = (document.getElementById('claudeBaseUrl').value || '').trim();

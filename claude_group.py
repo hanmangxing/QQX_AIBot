@@ -743,6 +743,13 @@ class ClaudeGroupMode:
 
     async def _respond(self, group_id: Any):
         messages = self._build_messages(group_id)
+        # 【转述】勾了「用识图模型转述图片」：带图的请求先让识图模型写成文字再发
+        if self._cfg("main_vision_transcribe", False) and any(isinstance(m.get("content"), list) for m in messages):
+            try:
+                messages = await self._transcribe_imgs(messages)
+                await self.log("INFO", "[群聊] 已按设置用识图模型转述图片（主对话模型无需多模态）")
+            except Exception as _e:
+                await self.log("WARN", f"[群聊] 图片转述失败，按原样发送：{_e}")
         # 外审拦截：群聊这条链路以前完全没有这层判断，被拦的文案会直接发进群里。
         # 现在默认就走这套 —— 命中就不当正文、不发群、不进上下文，再按「外审拦截」
         # 设置重试；重试用尽本轮沉默（什么都不发）。
@@ -868,6 +875,15 @@ class ClaudeGroupMode:
                     cfg=_seg_cfg, scope="group", images=images, log=self.log)
             else:
                 await self.send_group_msg(int(group_id), send_text, images=images)
+            # 【空间】心情爆表时，用一次专用调用让它自己去发条说说（内容不进群）
+            try:
+                import qzone_post as _QZP
+                await _QZP.maybe_post(
+                    self, chat_type="group", chat_id=group_id,
+                    system_prompt=self._system_prompt(group_id),
+                    call_llm=self._call_api)
+            except Exception as _e:
+                await self.log("WARN", f"[空间] 触发异常：{_e}")
         if _memes_a and _sep:
             await self.send_group_msg(int(group_id), "", images=_memes_a)
             await self.log("INFO", f"[群聊] 再发 {len(_memes_a)} 张表情包（正文之后）")
@@ -1335,9 +1351,24 @@ class ClaudeGroupMode:
     def _notebook_block(self, query: str, group_id: Any = None) -> str:
         if not self._cfg("notebook_enabled", True) or self.notebook is None:
             return ""
+        # 自动召回：开关 / 条数 / 阈值 / 预览字数，各数据源独立（群聊走 claude_ 前缀）
+        if not self._cfg("notebook_inject", True):
+            return ""
+        try:
+            _tk = max(1, int(self._cfg("notebook_top_k", 3) or 3))
+        except Exception:
+            _tk = 3
+        try:
+            _pv = max(50, int(self._cfg("notebook_inject_chars", 300) or 300))
+        except Exception:
+            _pv = 300
+        try:
+            _thr = float(self._cfg("notebook_inject_threshold", 0) or 0)
+        except Exception:
+            _thr = 0.0
         _parts = []
         try:
-            _b1 = self.notebook.inject_block(query, top_k=3, preview=300)
+            _b1 = self.notebook.inject_block(query, top_k=_tk, preview=_pv, min_score=_thr)
             if _b1:
                 _parts.append(str(_b1).strip())
         except Exception as e:
@@ -1351,7 +1382,7 @@ class ClaudeGroupMode:
                 if not _allow or (group_id is not None and str(group_id) in _allow):
                     _mst = getattr(self.bot, "notebook_store", None)
                     if _mst is not None:
-                        _b2 = _mst.inject_block(query, top_k=3, preview=300)
+                        _b2 = _mst.inject_block(query, top_k=_tk, preview=_pv, min_score=_thr)
                         if _b2:
                             _parts.append("【另一侧（主 Bot 私聊）的笔记本】\n" + str(_b2).strip())
         except Exception as e:
@@ -1365,6 +1396,15 @@ class ClaudeGroupMode:
     def _build_messages(self, group_id: Any) -> List[Dict[str, Any]]:
         recent = self._recent(group_id)
         messages: List[Dict[str, Any]] = [{"role": "system", "content": self._system_prompt(group_id)}]
+        # 【时间感知】群聊也生效：勾了 time_inject_group 就注入，不看群聊用的是哪一档人设
+        if self.config.get("time_inject_group", True) and self.config.get("time_inject_enabled", True):
+            try:
+                from bot import build_time_block
+                _tb = build_time_block(self.config)
+                if _tb:
+                    messages[0]["content"] += "\n\n" + _tb
+            except Exception:
+                pass
 
         # 【戳一戳】群里这段时间被戳的记录，捎给主对话（报一次就清空）
         try:
@@ -1519,6 +1559,18 @@ class ClaudeGroupMode:
                                + json.dumps(data, ensure_ascii=False, indent=2))
             except Exception as _e:
                 await self.log("WARN", f"[调试模式] 群聊响应打印失败: {_e}")
+        try:
+            _rm = str((data.get("model") or "")) if isinstance(data, dict) else ""
+            if _rm:
+                _rq = payload.get("model")
+                _msg = "[模型核对] 请求 %s → 响应回报 %s" % (_rq, _rm)
+                _msg += "" if str(_rq) == _rm else "  ⚠ 不一致！可能被中转换了模型"
+                try:
+                    await self.log("WARN" if str(_rq) != _rm else "INFO", _msg)
+                except Exception:
+                    print(_msg)
+        except Exception:
+            pass
         ch = (data.get("choices") or [{}])[0]
         msg = ch.get("message") or {}
         text = str(msg.get("content") or "")

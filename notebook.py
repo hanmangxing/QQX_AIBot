@@ -260,7 +260,8 @@ class NotebookStore:
                     score += w * ov
         return score
 
-    def search(self, query: str, limit: int = 50, scope: str = "") -> List[Dict[str, Any]]:
+    def search(self, query: str, limit: int = 50, scope: str = "",
+               min_score: float = 0.0) -> List[Dict[str, Any]]:
         """检索条目，返回带 score 的列表（含正文，供 AI 阅读）。"""
         with self._lock:
             rows = []
@@ -273,6 +274,12 @@ class NotebookStore:
                     row["score"] = round(sc, 4)
                     rows.append(row)
         rows.sort(key=lambda r: (-r["score"], r.get("short_id", 0)))
+        try:
+            _ms = float(min_score or 0)
+        except Exception:
+            _ms = 0.0
+        if _ms > 0:  # 阈值过滤：0 = 不过滤，越高越严格
+            rows = [r for r in rows if float(r.get("score") or 0) >= _ms]
         return rows[:max(1, int(limit))]
 
     # ------------------------------------------------------------ 正文分节 / 分页
@@ -336,9 +343,9 @@ class NotebookStore:
     # ------------------------------------------------------------ 注入
 
     def inject_block(self, query: str, top_k: int = 3, preview: int = 300,
-                     scope: str = "") -> str:
+                     scope: str = "", min_score: float = 0.0) -> str:
         """检索相关笔记，拼成注入主对话的提示块（每条只给预览，全文让 AI 自己展开）。"""
-        hits = self.search(query, limit=max(1, int(top_k)), scope=scope)
+        hits = self.search(query, limit=max(1, int(top_k)), scope=scope, min_score=min_score)
         if not hits:
             return ""
         lines = []

@@ -40,6 +40,7 @@ DEFAULTS: Dict[str, Any] = {
     "sec_repeat_need": 3,          # 至少几条一样才算复读
     "sec_repeat_min_len": 2,       # 太短的不算复读
     "sec_repeat_cooldown": 120,    # 同一句复读后的冷却秒数（0=不冷却）
+    "sec_repeat_prob": 0.6,        # 条件都满足后再抽一次概率（0-1，越接近1越容易跟）
     "sec_debug": False,
 }
 
@@ -258,13 +259,28 @@ class Secretary:
                                  "time": time.strftime("%H:%M:%S")}
                     # 冷却中：这一句先不跟，继续往下走（关键词 / 秘书模型）
                 else:
-                    self._rep_cd[_key] = _now
-                    if len(self._rep_cd) > 200:      # 防字典无限增长
-                        for _k in sorted(self._rep_cd, key=lambda x: self._rep_cd[x])[:100]:
-                            self._rep_cd.pop(_k, None)
-                    self.stats["repeat"] += 1
-                    self.last = {"action": "repeat", "text": rep, "time": time.strftime("%H:%M:%S")}
-                    return {"action": "repeat", "text": rep, "reason": "群里在复读"}
+                    # 权重闸门：窗口和冷却都满足了，再抽一次概率，抽中才真的跟着复读
+                    try:
+                        _prob = float(c.get("sec_repeat_prob", 0.6))
+                    except (TypeError, ValueError):
+                        _prob = 0.6
+                    _prob = max(0.0, min(1.0, _prob))
+                    if _prob < 1.0 and random.random() >= _prob:
+                        # 没抽中：这次不跟。冷却照样打上，免得下一条消息接着抽
+                        # （不打的话一条新消息抽一次，权重就形同虚设了）
+                        self._rep_cd[_key] = _now
+                        self.stats["repeat_skip"] = self.stats.get("repeat_skip", 0) + 1
+                        self.last = {"action": "repeat_skip", "text": rep, "wait": 0,
+                                     "reason": "概率未抽中（%.2f）" % _prob,
+                                     "time": time.strftime("%H:%M:%S")}
+                    else:
+                        self._rep_cd[_key] = _now
+                        if len(self._rep_cd) > 200:      # 防字典无限增长
+                            for _k in sorted(self._rep_cd, key=lambda x: self._rep_cd[x])[:100]:
+                                self._rep_cd.pop(_k, None)
+                        self.stats["repeat"] += 1
+                        self.last = {"action": "repeat", "text": rep, "time": time.strftime("%H:%M:%S")}
+                        return {"action": "repeat", "text": rep, "reason": "群里在复读"}
 
         # 1.5) 呼唤模式：被@/被回复后的在线期内不再叫秘书模型，直接放给主对话。
         #      复读检测放在这之前 —— 复读是独立机制，不受在线状态影响。

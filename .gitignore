@@ -38,3 +38,7 @@ _deliver/
 开源发布指南.md
 新用户测试清单.md
 首次使用说明.txt
+
+# 本地备份与大体积视频（不进仓库）
+config.json.bak*
+QQ星介绍视频*.mp4

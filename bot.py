@@ -220,7 +220,7 @@ def _preset_name(cfg: Dict[str, Any]) -> str:
 async def _collect_stream(resp) -> dict:
     """把 SSE 流拼回普通 chat/completions 响应的同构结构 —— 下游解析一行都不用改。
     正文可能落在 content 或 reasoning_content（思维链模型），工具调用参数分片累加。"""
-    text, reason, finish = "", "", None
+    text, reason, finish, _mdl = "", "", None, ""
     tcs, buf, seen_sse = {}, "", False
     async for chunk in resp.content.iter_any():
         buf += chunk.decode("utf-8", "ignore")
@@ -236,6 +236,8 @@ async def _collect_stream(resp) -> dict:
                 break
             try:
                 obj = json.loads(data)
+                if isinstance(obj, dict) and obj.get("model") and not _mdl:
+                    _mdl = str(obj["model"])
             except Exception:
                 continue
             ch = (obj.get("choices") or [{}])[0]
@@ -268,7 +270,7 @@ async def _collect_stream(resp) -> dict:
         msg["reasoning_content"] = reason
     if tcs:
         msg["tool_calls"] = [tcs[k] for k in sorted(tcs)]
-    return {"choices": [{"message": msg, "finish_reason": finish or "stop"}]}
+    return {"choices": [{"message": msg, "finish_reason": finish or "stop"}], "model": _mdl}
 
 def _preset_tool(cfg: Dict[str, Any]) -> Dict[str, Any]:
     """按当前预设生成正文工具定义（工具名/说明都可改）。"""
@@ -945,6 +947,24 @@ class HistoryStore:
             name = conv.get("sender_name", "")
         self._notify("chat_message", {"user_id": uid, "sender_name": name, "message": msg})
         return msg
+
+    def purge_user(self, user_id) -> bool:
+        """彻底删除一个用户：连会话记录一起移除。
+
+        跟 clear() 的区别：clear() 只是把 messages 清空，会话记录还留在 history.json 里，
+        所以会话列表上那个用户还在（显示 0 条）；purge_user() 把整条记录摘掉，
+        列表里就不再有这个人了。
+        """
+        key = self._key(user_id)
+        with self._lock:
+            existed = key in self.data
+            if existed:
+                self.data.pop(key, None)
+                self._save()
+            uid = self._coerce_uid(user_id)
+        if existed:
+            self._notify("chat_delete", {"user_id": uid, "purged": True})
+        return existed
 
     def delete_message(self, user_id, message_id: str) -> bool:
         with self._lock:
@@ -1674,6 +1694,18 @@ class OneBotClient:
             #     提前换成数组会被它写坏。
             if vision_items:
                 _attached = self._attach_vision_images(messages, vision_items)
+            # 4.6 【转述】勾了「用识图模型转述图片」：把图交给表情包识图模型写成文字，
+            #     并摘掉真实图片段 —— 给没有多模态能力的主对话模型用。
+            if vision_items and self.config.get("main_vision_transcribe", False):
+                try:
+                    _grp = getattr(self, "claude", None)
+                    if _grp is not None and hasattr(_grp, "_transcribe_imgs"):
+                        messages = await _grp._transcribe_imgs(messages)
+                        await self.log("INFO", "[识图] 已按设置用识图模型转述图片（主对话模型无需多模态）")
+                    else:
+                        await self.log("WARN", "[识图] 想转述图片，但群聊模块没就绪，按原样发送")
+                except Exception as _e:
+                    await self.log("WARN", f"[识图] 图片转述失败，按原样发送：{_e}")
                 await self.log("INFO", f"[识图] 已附上 {_attached} 张图片给模型"
                                        f"（本轮共 {len(vision_items)} 张）")
 
@@ -1883,6 +1915,16 @@ class OneBotClient:
                         cfg=_seg_cfg, scope="private", images=_body_imgs, log=self.log)
                 else:
                     await self.send_private_msg(user_id, _reply_for_send, images=_body_imgs)
+            # 【空间】心情爆表时，用一次专用调用让 AI 自己去发条说说（内容不进对话）
+            try:
+                import qzone_post as _QZP
+                await _QZP.maybe_post(
+                    self, chat_type="private", chat_id=user_id,
+                    system_prompt=str((messages[0].get("content") if messages else "") or ""),
+                    call_llm=lambda _m: self._call_llm_native(_m),
+                    hint=str(message_text or "")[:400])
+            except Exception as _e:
+                await self.log("WARN", f"[空间] 触发异常：{_e}")
             if _meme_imgs and _sep2:
                 await self.send_private_msg(user_id, "", images=_meme_imgs)
                 await self.log("INFO", f"[表情包] 私聊再发 {len(_meme_imgs)} 张（正文之后）")
@@ -1984,7 +2026,11 @@ class OneBotClient:
         top_k = int(self.config.get("notebook_top_k", 3) or 3)
         preview = int(self.config.get("notebook_inject_chars", 300) or 300)
         try:
-            block = store.inject_block(query, top_k=top_k, preview=preview)
+            try:
+                _thr = float(self.config.get("notebook_inject_threshold", 0) or 0)
+            except Exception:
+                _thr = 0.0
+            block = store.inject_block(query, top_k=top_k, preview=preview, min_score=_thr)
         except Exception as e:
             await self.log("WARN", f"[笔记本] 笔记召回失败：{e}")
             return ""
@@ -1998,13 +2044,14 @@ class OneBotClient:
                     _cm = getattr(self, "claude", None)
                     _cst = getattr(_cm, "notebook", None) if _cm is not None else None
                     if _cst is not None:
-                        _b2 = _cst.inject_block(query, top_k=top_k, preview=preview)
+                        _b2 = _cst.inject_block(query, top_k=top_k, preview=preview, min_score=_thr)
                         if _b2:
                             _parts.append("【另一侧（群聊模式）的笔记本】\n" + str(_b2).strip())
         except Exception as e:
             await self.log("WARN", f"[笔记本] 跨对话笔记本召回失败：{e}")
+        _thr_tip = ("，阈值 ≥%s" % _thr) if _thr > 0 else ""
         if _parts:
-            await self.log("INFO", f"[笔记本] 已注入相关笔记（最多 {top_k} 条，每条 {preview} 字预览）")
+            await self.log("INFO", f"[笔记本] 已注入相关笔记（最多 {top_k} 条，每条 {preview} 字预览{_thr_tip}）")
         return "\n\n".join(_parts)
 
     async def _exec_nb_tool(self, name: str, args: dict, user_id: int = 0) -> str:
@@ -2416,6 +2463,19 @@ class OneBotClient:
                 await self.log("WARN", f"[笔记本] 工具轮异常，本轮跳过：{e}")
                 return ""
 
+            try:
+                _rm = str((res_json.get("model") or "")) if isinstance(res_json, dict) else ""
+                _rq = model
+                _msg = "[模型核对] 请求 %s → 响应回报 %s" % (_rq, _rm or "（对方未回报）")
+                if _rm and str(_rq) != _rm:
+                    _msg += "  ⚠ 不一致！可能被中转换了模型"
+                try:
+                    await self.log("WARN" if (_rm and str(_rq) != _rm) else "INFO", _msg)
+                except Exception:
+                    print(_msg)
+            except Exception:
+                pass
+            
             choices = res_json.get("choices") or []
             if not choices:
                 return ""
@@ -2603,6 +2663,19 @@ class OneBotClient:
                     else:
                         res_json = await resp.json()
 
+            try:
+                _rm = str((res_json.get("model") or "")) if isinstance(res_json, dict) else ""
+                _rq = model
+                _msg = "[模型核对] 请求 %s → 响应回报 %s" % (_rq, _rm or "（对方未回报）")
+                if _rm and str(_rq) != _rm:
+                    _msg += "  ⚠ 不一致！可能被中转换了模型"
+                try:
+                    await self.log("WARN" if (_rm and str(_rq) != _rm) else "INFO", _msg)
+                except Exception:
+                    print(_msg)
+            except Exception:
+                pass
+            
             choices = res_json.get("choices", [])
             if not choices:
                 last_debug_info["raw_response"] = res_json
@@ -2873,7 +2946,7 @@ class OneBotClient:
                     await asyncio.sleep(max(60, int(_ID._i(_c, "idle_check_minutes", 20)) * 60))
                 _first = False
                 try:
-                    _ts = _ID.seed_from_history()
+                    _ts = _ID.seed_from_history(cfg=self.config)
                     if _ts > 0:
                         await self.log("INFO", "[闲置触发] 已从聊天记录回填上次说话时间 "
                                                + time.strftime("%m-%d %H:%M", time.localtime(_ts)))
@@ -2898,6 +2971,17 @@ class OneBotClient:
                     _ID.note("抽中但夜间未醒：%s" % r.get("mode"))
                     continue
                 await self._fire_idle(r)
+                # 单独思念：每个填进来的 ID 各抽一次，各自冷却、各自计数
+                for _r in _ID.should_fire_solo(self.config):
+                    _cid = _r.get("chat_id")
+                    if not _r.get("hit"):
+                        await self.log("INFO", f"[单独思念] {_cid} 已闲置 {_r['idle_hours']} 小时，"
+                                               f"本次概率 {_r['p'] * 100:.0f}%，没抽中")
+                        continue
+                    if not _r.get("fire"):
+                        await self.log("INFO", f"[单独思念] {_cid} 抽中了但夜间没醒，这次先不发")
+                        continue
+                    await self._fire_idle(_r)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -2935,8 +3019,9 @@ class OneBotClient:
                 await self.send_group_msg(int(r.get("chat_id") or 0), txt)
             else:
                 await self.send_private_msg(int(r.get("chat_id") or 0), txt)
-            _ID.mark_fired(mode)
-            await self.log("INFO", f"[闲置触发] 已主动发出（{'旧事重提' if mode == 'recall' else '闲置问候'}，"
+            _ID.mark_fired(mode, r.get("key"))
+            await self.log("INFO", f"[{'单独思念' if r.get('solo') else '闲置触发'}] 已主动发出"
+                                   f"（{'旧事重提' if mode == 'recall' else '闲置问候'}，"
                                    f"闲置 {r.get('idle_hours')} 小时）")
         except Exception as e:
             await self.log("WARN", f"[闲置触发] 发送失败：{e}")

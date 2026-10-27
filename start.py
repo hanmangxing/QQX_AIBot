@@ -86,4 +86,8 @@ if __name__ == "__main__":
     # 启动 uvicorn
     import uvicorn
     from app import app
-    uvicorn.run(app, host="127.0.0.1", port=8090, reload=False)
+    # 监听地址：Windows 默认只绑回环（更安全）；容器 / Linux 默认绑 0.0.0.0，
+    # 否则 Docker 的端口映射从容器外连不进来。可用环境变量 QQX_HOST 覆盖。
+    _host = os.environ.get("QQX_HOST") or ("127.0.0.1" if os.name == "nt" else "0.0.0.0")
+    print("\u76d1\u542c\u5730\u5740: %s:8090" % _host)
+    uvicorn.run(app, host=_host, port=8090, reload=False)

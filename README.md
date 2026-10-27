@@ -110,6 +110,8 @@ docker compose up -d
   `docker compose down` 之后再 `up`，数据还在。
 - **保活（自动重登）在容器里不生效**：它靠 Windows 的 `tasklist` / `taskkill` 管进程，
   容器里没有这套。协议端在容器外，重启用 `restart: unless-stopped` 加协议端自己的守护兜。
+- **监听地址**：Windows 上默认只绑 `127.0.0.1`（更安全）；容器 / Linux 下默认绑
+  `0.0.0.0`，否则端口映射连不进来。想改可以用环境变量 `QQX_HOST`。
 - **时区已经设好**（`TZ=Asia/Shanghai`），时间感知不会因为容器默认 UTC 而错 8 小时。
 
 ### 不用 compose 的手动方式

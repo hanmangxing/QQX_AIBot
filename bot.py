@@ -1354,19 +1354,35 @@ class OneBotClient:
     def _active_ws_url(self) -> str:
         """按当前协议端取 OneBot 正向 WS 地址（NapCat / SnowLuma 各一份）。
 
-        SnowLuma 的 OneBot 网络默认开鉴权，地址必须带上它配置里的 access_token，
-        否则握手会被直接拒掉（HTTP 401）。token 由 snowluma_token 模块按控制台左下角
-        填的「SnowLuma 启动命令」反推安装目录后拉取，所以换安装地址不用改代码。
+        统一走 app.py 的解析链：应用 QQX_SNOWLUMA_WS_URL 环境变量覆盖、补 ws:// 协议头、
+        并在容器里把 127.0.0.1 / localhost 改写成协议端容器名。
+        以前这里直接调 snowluma_token，容器里拿到的是 ws://127.0.0.1:3001/... ——
+        那是 qqx-aibot 容器自己，必然连接被拒，而且重连多少次都没用。
         """
         _p = str(self.config.get("qq_protocol") or "napcat").strip().lower()
+        try:
+            import app as _app
+        except Exception:
+            _app = None
         if _p == "snowluma":
             _raw = str(self.config.get("snowluma_ws_url") or "")
+            if _app is not None:
+                try:
+                    return _app.snowluma_ws_autofix(_raw)
+                except Exception:
+                    pass
             try:
                 import snowluma_token as _slt
                 return _slt.ws_url_with_token(_raw, self.config)
             except Exception:
                 return _raw.strip() or "ws://127.0.0.1:3001"
-        return str(self.config.get("napcat_ws_url") or "ws://127.0.0.1:3001")
+        _nap = str(self.config.get("napcat_ws_url") or "ws://127.0.0.1:3001")
+        if _app is not None:
+            try:
+                return _app.ws_url_normalize(_nap)
+            except Exception:
+                pass
+        return _nap
 
     def _proto_name(self) -> str:
         """当前协议端显示名。"""
@@ -1375,12 +1391,35 @@ class OneBotClient:
 
     async def _run_loop(self):
         _pn = self._proto_name()
-        url = self._active_ws_url()
-        await self.log("INFO", f"正在尝试连接 {_pn} OneBot WebSocket: {url} ...")
+        # 取地址本身可能失败（协议端配置还没生成 / WebUI 接口暂时不通）。
+        # 这里绝不能让它抛出去 —— 抛出去会直接打死 _run_loop 任务，
+        # 之后连重试都没有，表现为「启动时协议端没就绪，就永远连不上」。
+        try:
+            url = self._active_ws_url()
+        except Exception as _e:
+            url = ""
+            await self.log("INFO", f"暂时取不到 {_pn} 的连接地址（{_e}），进入自动重试……")
+        if url:
+            await self.log("INFO", f"正在尝试连接 {_pn} OneBot WebSocket: {url} ...")
 
         while self.is_running:
-            # 每轮重连都重新取一次地址：SnowLuma 的 access_token 可能刚被拉回来 / 换过
-            url = self._active_ws_url()
+            # 每轮重连都重新取一次地址：SnowLuma 的 access_token 可能刚被拉回来 / 换过。
+            # 但取地址这件事本身会失败（容器里读协议端配置 / 访问其 WebUI 都可能不通），
+            # 失败必须自己兜住并退避重试，不能让异常打死整个重连循环。
+            try:
+                url = self._active_ws_url()
+                self._url_fail_logged = False
+            except asyncio.CancelledError:
+                break
+            except Exception as _e:
+                self.ws = None
+                if not self.is_running:
+                    break
+                if not getattr(self, "_url_fail_logged", False):
+                    self._url_fail_logged = True
+                    await self.log("INFO", f"暂时取不到 {_pn} 的连接地址（{_e}），3 秒后自动重试……")
+                await asyncio.sleep(3)
+                continue
             # 地址缺协议头时补 ws://：Docker 里把地址填成
             # host.docker.internal:3001 很自然，缺协议头会让 websockets
             # 一直报 "scheme isn't ws or wss" 并每 3 秒重试。

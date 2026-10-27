@@ -1381,6 +1381,17 @@ class OneBotClient:
         while self.is_running:
             # 每轮重连都重新取一次地址：SnowLuma 的 access_token 可能刚被拉回来 / 换过
             url = self._active_ws_url()
+            # 地址缺协议头时补 ws://：Docker 里把地址填成
+            # host.docker.internal:3001 很自然，缺协议头会让 websockets
+            # 一直报 "scheme isn't ws or wss" 并每 3 秒重试。
+            _u0 = str(url or "").strip()
+            if _u0 and not _u0.startswith(("ws://", "wss://")):
+                if _u0.startswith("https://"):
+                    url = "wss://" + _u0[8:]
+                elif _u0.startswith("http://"):
+                    url = "ws://" + _u0[7:]
+                else:
+                    url = "ws://" + _u0.lstrip("/")
             try:
                 async with websockets.connect(url, ping_interval=30, ping_timeout=10) as ws:
                     self.ws = ws

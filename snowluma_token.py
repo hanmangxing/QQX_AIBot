@@ -164,7 +164,14 @@ def from_config_file(cfg=None):
 
 # ---------------- 路线 2：SnowLuma 自带 WebUI 的 HTTP 接口 ----------------
 def webui_base(cfg=None):
-    """SnowLuma 自带 WebUI 的地址（端口读它自己 config/runtime.json，默认 5099）。"""
+    """SnowLuma 自带 WebUI 的地址（端口读它自己 config/runtime.json，默认 5099）。
+
+    容器里读不到 SnowLuma 的 runtime.json，用 QQX_SNOWLUMA_WEBUI 显式指定，
+    例如 docker-compose 里设 host.docker.internal:5099。
+    """
+    _env = str(os.environ.get("QQX_SNOWLUMA_WEBUI") or "").strip().rstrip("/")
+    if _env:
+        return _env if "://" in _env else "http://" + _env
     cfg = cfg if isinstance(cfg, dict) else load_cfg()
     _port, _host = 5099, "127.0.0.1"
     try:

@@ -16,6 +16,7 @@ services:
     ports:
       - "8090:8090"
     environment:
+      QQX_SNOWLUMA_WEBUI: host.docker.internal:5099
       TZ: Asia/Shanghai
       # 协议端目录：只在「让容器自己去拉起 NapCat」时才需要填（一般不填）
       # QQX_NAP_DIR: /napcat

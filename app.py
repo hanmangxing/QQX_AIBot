@@ -406,6 +406,16 @@ def snowluma_ws_info() -> dict:
     return {}
 
 
+def _in_container() -> bool:
+    """当前是不是跑在容器里（Docker 下协议端在容器外，地址要改写）。"""
+    if os.environ.get("QQX_IN_DOCKER") == "1":
+        return True
+    try:
+        return os.path.exists("/.dockerenv")
+    except Exception:
+        return False
+
+
 def ws_url_normalize(url: str) -> str:
     """把填进来的地址规范成 ws:// / wss:// 开头。
 
@@ -420,9 +430,19 @@ def ws_url_normalize(url: str) -> str:
         return "wss://" + u[8:]
     if u.startswith("http://"):
         return "ws://" + u[7:]
-    if u.startswith(("ws://", "wss://")):
-        return u
-    return "ws://" + u.lstrip("/")
+    if not u.startswith(("ws://", "wss://")):
+        u = "ws://" + u.lstrip("/")
+    # 容器里 127.0.0.1 指的是容器自己，协议端在宿主机上，
+    # 统一改写成 host.docker.internal，配置在「本机跑」和「Docker 跑」之间通用。
+    if _in_container():
+        for _lb in ("127.0.0.1", "localhost", "0.0.0.0", "[::1]"):
+            for _sc in ("ws://", "wss://"):
+                if u.startswith(_sc + _lb):
+                    _rest = u[len(_sc) + len(_lb):]
+                    if _rest[:1] in (":", "/", "?", ""):
+                        u = _sc + "host.docker.internal" + _rest
+                        break
+    return u
 
 
 def snowluma_ws_autofix(url: str) -> str:

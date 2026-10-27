@@ -314,6 +314,16 @@ def extract_pic_prompts(text: str, max_count: int = 1) -> Tuple[str, List[str]]:
 #  ComfyUI 客户端
 # ============================================================
 
+def _in_container() -> bool:
+    """是不是跑在容器里：Docker 会放 /.dockerenv，compose 里也设了 QQX_IN_DOCKER=1。"""
+    if str(os.environ.get("QQX_IN_DOCKER") or "").strip() == "1":
+        return True
+    try:
+        return os.path.exists("/.dockerenv")
+    except Exception:
+        return False
+
+
 class ComfyUIClient:
     """ComfyUI HTTP 客户端。线程/协程安全（无共享可变状态，除目录）。"""
 
@@ -335,12 +345,22 @@ class ComfyUIClient:
 
     @property
     def server(self) -> str:
-        s = str(self._cfg("comfy_server", "http://127.0.0.1:8000") or "").strip()
+        # 容器里 127.0.0.1 指的是容器自己，而 ComfyUI 通常跑在宿主机上，
+        # 于是表现成「生图连不上 ComfyUI」。这里跟 OneBot 地址用同一套规则：
+        # 环境变量优先；容器里把回环地址改写成宿主机的 host.docker.internal。
+        s = str(os.environ.get("QQX_COMFY_SERVER") or "").strip() \
+            or str(self._cfg("comfy_server", "http://127.0.0.1:8000") or "").strip()
         if not s:
             s = "http://127.0.0.1:8000"
         if not s.startswith(("http://", "https://")):
             s = "http://" + s
-        return s.rstrip("/")
+        s = s.rstrip("/")
+        if _in_container():
+            for _loop in ("//127.0.0.1", "//localhost", "//0.0.0.0", "//[::1]"):
+                if _loop in s:
+                    s = s.replace(_loop, "//host.docker.internal")
+                    break
+        return s
 
     @property
     def timeout(self) -> int:

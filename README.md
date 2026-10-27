@@ -1,5 +1,10 @@
 # QQX_AIBot
 
+[![License](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776ab.svg)](https://www.python.org/downloads/)
+[![NapCat](https://img.shields.io/badge/QQ%20Protocol-NapCat-2f6fdb.svg)](https://github.com/NapNeko/NapCatQQ)
+[![SnowLuma](https://img.shields.io/badge/QQ%20Protocol-SnowLuma-8a5cf6.svg)](https://github.com/SnowLuma/SnowLuma)
+
 **QQ星，一个自托管、一次部署就能用的 QQ AI 伴侣。**
 
 前言：如果你是酒馆玩家，这个项目你能很快上手，你可以把你喜欢的角色直接放进QQ里全天候互动，你也可以自己把喜欢的预设和世界书写在里面，并且使用Gemini模型，你懂的。同时有外审拦截保驾护航，自动重roll，但预设需要加群拿(见安装文档和本文底部)。只需部署并配置，就可以直接享受文生图与表情包等高互动，有人味的全面体验。这不是又一个机器人开发框架——框架这块已经有 AstrBot、NoneBot2 做得很好。QQX_AIBot 的定位是酒馆与AstrBot中间，做第一个把番茄和鸡蛋炒在一起的项目，想做的是把「陪伴感」直接做成产品：部署完就有记忆、有情绪、会主动找你说话，不用自己一个个拼插件。
@@ -19,7 +24,7 @@ QQX_AIBot 把这些打包成一套可运行的整体：**协议端保活 + 多�
 ### 部署与运行
 - 一键启动：双击 `一键启动.bat`，自动安装依赖并拉起服务
 - WebUI 控制台：浏览器里配 API、人设、各项开关，不用改代码
-- 双协议端：NapCat / SnowLuma 可切换，支持自动启停与保活
+- 双协议端：[NapCat](https://github.com/NapNeko/NapCatQQ) / [SnowLuma](https://github.com/SnowLuma/SnowLuma) 可切换，支持自动启停与保活
 - 依赖极轻：`fastapi`、`uvicorn`、`aiohttp`、`websockets`、`pydantic`
 
 ### 对话与人格
@@ -43,7 +48,7 @@ QQX_AIBot 把这些打包成一套可运行的整体：**协议端保活 + 多�
 
 ### 多模态
 - 看图：图片理解，带数量与体积上限
-- 生图：接 ComfyUI 工作流，支持节点映射与冷却
+- 生图：接 [ComfyUI](https://github.com/comfyanonymous/ComfyUI) 工作流，支持节点映射与冷却
 - 表情包视觉理解与自动标注
 
 ### 设备联动
@@ -56,10 +61,18 @@ QQX_AIBot 把这些打包成一套可运行的整体：**协议端保活 + 多�
 
 ## 快速开始
 
+需要先准备好这些前置：
+
+| 前置 | 作用 | 地址 |
+| --- | --- | --- |
+| **Python 3.10+** | 运行环境（实测 3.12） | [python.org/downloads](https://www.python.org/downloads/) |
+| **QQ 协议端** | 用来登录 QQ，二选一 | [NapCat](https://github.com/NapNeko/NapCatQQ) ／ [SnowLuma](https://github.com/SnowLuma/SnowLuma) |
+| **模型 API** | OpenAI 兼容接口，Gemini / DeepSeek 等均可 | 按你用的服务商 |
+
 1. **环境**：Windows，Python 3.10+（实测 3.12）
 2. **启动**：双击 `一键启动.bat`；或命令行 `py -3 start.py`（`python start.py` 亦可）
 3. **配置**：启动后控制台会自动打开，在「API 配置」里填模型 key
-4. **接协议端**：按 NapCat / SnowLuma 的说明登录 QQ，填入 WebSocket 地址与 token
+4. **接协议端**：按 [NapCat](https://github.com/NapNeko/NapCatQQ) / [SnowLuma](https://github.com/SnowLuma/SnowLuma) 的说明登录 QQ，填入 WebSocket 地址与 token
 
 > 📖 **图文安装教程**（保姆级，含 24 张截图，从装 Python 到握手成功）：[`docs/安装教程.md`](docs/安装教程.md)；想要 PDF 版见 [Releases](../../releases)。
 
@@ -81,11 +94,11 @@ QQX_AIBot 把这些打包成一套可运行的整体：**协议端保活 + 多�
 | `segments.py` | 消息分段 |
 | `debounce.py` / `debounce_model/` | 连发合并判断 |
 | `sticker_steal.py` | 表情包池与偷图 |
-| `comfyui.py` | ComfyUI 生图 |
+| `comfyui.py` | [ComfyUI](https://github.com/comfyanonymous/ComfyUI) 生图 |
 | `secretary.py` | 群聊秘书网关 |
 | `keepalive.py` | 协议端保活 |
 | `start.py` / `一键启动.bat` | 启动入口（自动装依赖） |
-| `snowluma_token.py` | 自动读取 SnowLuma 的 accessToken（省去手填令牌） |
+| `snowluma_token.py` | 自动读取 [SnowLuma](https://github.com/SnowLuma/SnowLuma) 的 accessToken（省去手填令牌） |
 | `config.example.json` | 配置键名清单 |
 | `docs/安装教程.md` | 图文安装教程 |
 | `预设_自检.py` | 前端预设自检脚本 |
@@ -116,7 +129,7 @@ Based on LittleWhiteBox by biex
 
 - 本项目面向**个人自托管**用途，请自行确认所在地区的法律法规，以及你所使用模型服务商的条款
 - 禁止用于任何涉及未成年人的性相关内容，以及任何违法用途
-- NapCat / SnowLuma / ComfyUI 等第三方组件的使用风险与合规，由使用者自行承担
+- [NapCat](https://github.com/NapNeko/NapCatQQ) / [SnowLuma](https://github.com/SnowLuma/SnowLuma) / [ComfyUI](https://github.com/comfyanonymous/ComfyUI) 等第三方组件的使用风险与合规，由使用者自行承担
 
 ## 许可证
 

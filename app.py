@@ -3830,8 +3830,12 @@ async def _snowluma_guard_loop():
         except Exception:
             _iv = 30
         try:
-            if protocol_backend() != "snowluma" or not current_config.get("snowluma_keepalive", True):
-                # 不是 SnowLuma 模式、或用户关了保活：挂起，什么都不做
+            if (protocol_backend() != "snowluma"
+                    or not current_config.get("snowluma_keepalive", True)
+                    or _in_container()):
+                # 不是 SnowLuma 模式、用户关了保活、或跑在容器里：挂起，什么都不做。
+                # 容器里协议端是另一个容器，主程序既看不到它的进程、也拉不起来，
+                # 硬跑只会在日志里刷「检测到进程不在」的假警告。
                 _sl_ka_state["running"] = None
                 await asyncio.sleep(_iv)
                 continue
@@ -3867,7 +3871,7 @@ async def api_snowluma_keepalive(body: dict):
             current_config["snowluma_keepalive"] = bool(_b.get("enabled"))
         if "interval" in _b:
             current_config["snowluma_ka_interval"] = max(10, int(_b.get("interval") or 30))
-        save_config()
+        save_config(current_config)
         return {"status": "ok",
                 "enabled": bool(current_config.get("snowluma_keepalive", True)),
                 "interval": int(current_config.get("snowluma_ka_interval") or 30)}

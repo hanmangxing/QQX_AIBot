@@ -78,9 +78,14 @@ QQX_AIBot 把这些打包成一套可运行的整体：**协议端保活 + 多�
 
 > `config.json` 由程序首次运行时自动生成，**不要**提交或外传——它含密钥，已在 `.gitignore` 中。所有可配置项的键名见 `config.example.json`。
 
-## Docker 部署（可选）
+## Docker 部署（可选 · 需要一点基础）
 
-不想装 Python、或者要在 NAS / 服务器上跑，用 Docker。**协议端和主程序都进容器，宿主机只需要 Docker。**
+**先说清楚：这一节不是零门槛。** 它唯一的价值是让用的人**不用装 Python**。如果你只是自己用、本机跑得好好的，**可以完全跳过这一节**。
+
+不适合用 Docker 的情况：
+
+- 你想改代码、边改边看效果 —— 容器里挂载目录虽然也能改，但路径和权限容易绕晕，本机跑更顺
+- 你机器上已经跑着一个本机版协议端 —— 看文末「备选」
 
 ### 一条命令起来
 
@@ -96,8 +101,25 @@ docker compose up -d
 
 浏览器打开 **http://127.0.0.1:6081** 进 noVNC 网页远程桌面，用手机 QQ 扫码登录。
 
-- 要密码的话，密码在 `docker logs snowluma` 里；也可以先用 `VNC_PASSWD=你的密码 docker compose up -d` 自己指定
-- 登录一次长期有效，数据存在具名卷里，重建容器不用重扫
+- 那个「突然多出来的桌面」就是**容器里的 Linux 桌面**，容器没有屏幕，所以用浏览器远程看它。扫码在这里完成，**登录一次就行**
+- 要密码的话在 `docker logs snowluma` 里；建议直接建个 `.env` 写 `VNC_PASSWD=你的密码` 固定住（不写的话每次重建容器都会随机换一个）
+- 登录数据存在具名卷里，`docker compose restart` 不用重扫；但 `--force-recreate` 会掉登录，需要重扫
+
+### 最容易踩的坑：`127.0.0.1` 到底指谁
+
+**记住这一条，能省掉大半麻烦：**
+
+> 容器里的 `127.0.0.1` 指的是**容器自己**，不是你的电脑。
+
+所以任何「本机地址」写进配置、又在容器里用，都会连不上。下面三处编排已经自动处理：
+
+| 配置项 | 容器里自动变成 | 靠什么 |
+|---|---|---|
+| `snowluma_ws_url` | `ws://snowluma:3001` | 环境变量覆盖 |
+| 协议端 WebUI 入口 | 宿主机映射出去的端口 | `QQX_SNOWLUMA_WEBUI_URL` |
+| `comfy_server`（生图） | `http://host.docker.internal:8000` | 代码自动改写回环地址 |
+
+**生图（ComfyUI）**：ComfyUI 通常跑在宿主机上，容器访问它得用 `host.docker.internal`，代码已自动改写，你不用动配置。如果 ComfyUI 在**别的机器**上，直接填那台机器的 IP（**别填 `127.0.0.1`**）。
 
 ### 地址和 token 都不用管
 
@@ -107,7 +129,7 @@ docker compose up -d
 QQX_SNOWLUMA_WS_URL: ws://snowluma:3001
 ```
 
-`access_token` 也会自动读出来 —— SnowLuma 的数据卷只读挂给了主程序（`snowluma-data:/snowluma:ro` + `QQX_SNOWLUMA_DIR=/snowluma`）。
+`access_token` 也会自动读出来 —— SnowLuma 的数据卷只读挂给了主程序（`snowluma-data:/snowluma:ro` + `QQX_SNOWLUMA_DIR=/snowluma`）。SnowLuma 换了 token 也会自动跟上。
 
 **打开 http://127.0.0.1:8090 就能用，不用改任何配置。**
 
@@ -120,21 +142,24 @@ QQX_SNOWLUMA_WS_URL: ws://snowluma:3001
 | 5099 | SnowLuma 自带 WebUI |
 | 3001 / 3000 | OneBot 正向 WS / HTTP |
 
-撞端口就在 `docker-compose.yml` 里改 `ports` 冒号左边那个数。
+撞端口就在 `docker-compose.yml` 里改 `ports` 冒号左边那个数。如果宿主机上已经装了本机版 SnowLuma（占着 3001/5099），可以把 `ports` 左边换成别的数，或者用 `docker compose -f docker-compose.yml -f 你的覆盖文件.yml up -d`。
 
 ### 几个注意点
 
-- **WebUI 里的「启动协议端」按钮在容器里用不了** —— 协议端自己也是个容器，用 `docker compose restart snowluma` 管它
-- **保活不生效** —— 容器配了 `restart: unless-stopped`，崩了会自动重启
-- 想调参数（VNC 密码、屏幕分辨率等）在项目根目录建个 `.env`，变量名参考 SnowLuma 官方模板的 `.env.example`
+- **WebUI 里的「启动协议端」按钮** —— 协议端是另一个容器，主程序管不到它，点它不会启动任何东西。它会直接跳转到协议端 WebUI（容器里跳的是宿主机映射出去的地址，不会跳到你本机那个）。要重启协议端用 `docker compose restart snowluma`
+- **保活功能不生效** —— 容器配了 `restart: unless-stopped`，崩了会自动重启
+- **改了配置要 `docker compose restart qqx-aibot`**；`docker restart` 不会应用新的环境变量，环境变量变了要 `up -d --force-recreate`；依赖变了（`requirements.txt`）要 `up -d --build`
+- 调参数（VNC 密码、屏幕分辨率等）在项目根目录建 `.env`，变量名参考 SnowLuma 官方模板的 `.env.example`
 
 ### 备选：协议端留在容器外
 
-宿主机上已经跑着 SnowLuma / NapCat、不想动它的话：把 `docker-compose.yml` 里 `qqx-aibot` 的 `depends_on: [snowluma]` 和 `- snowluma-data:/snowluma:ro` 删掉，然后在 WebUI 里把 ws 地址填成 `host.docker.internal:3001`。
+宿主机上已经跑着 SnowLuma / NapCat、不想动它的话：把 `docker-compose.yml` 里 `qqx-aibot` 的 `depends_on: [snowluma]` 和 `- snowluma-data:/snowluma:ro` 两处删掉，再删掉 `QQX_SNOWLUMA_DIR` / `QQX_SNOWLUMA_WS_URL` 两个环境变量。
 
-- Windows / macOS 的 Docker Desktop 自带这个主机名；Linux 上编排已配好 `extra_hosts`
+- 主程序用 `host.docker.internal` 访问宿主机上的协议端。Windows / macOS 的 Docker Desktop 自带这个主机名；**Linux 上需要 `extra_hosts`**（`docker-compose.yml` 里已配好）
 - 这种模式下 `access_token` 要自己带在地址里：`host.docker.internal:3001?access_token=你的token`
 - 地址不写 `ws://` 也没关系，会自动补上
+
+
 ## 目录结构
 
 | 文件 / 目录 | 作用 |

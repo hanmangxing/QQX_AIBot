@@ -58,6 +58,9 @@ services:
     image: qqx-aibot:1.0.0
     container_name: qqx-aibot
     restart: unless-stopped
+    # Linux 上 host.docker.internal 需要显式映射（Docker Desktop 自带，加了也无害）
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - snowluma
     ports:

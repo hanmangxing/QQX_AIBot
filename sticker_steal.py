@@ -34,7 +34,7 @@ import secrets
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # ---------------- 常量 ----------------
 STICKER_DIR = Path("sticker_data")

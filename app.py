@@ -10,7 +10,7 @@ import io
 import os
 import subprocess
 from pathlib import Path
-from typing import Dict, Any, Set
+from typing import Any, Dict, List, Set
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Body, HTTPException
 from fastapi.responses import FileResponse, JSONResponse

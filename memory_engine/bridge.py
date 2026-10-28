@@ -223,10 +223,24 @@ class LwbMemory:
 
     def index_entries(self, user_id: Any, force: bool = False) -> Dict[str, Any]:
         items = self.store.list_items(user_id)
+        if not items:
+            return {"indexed": 0, "total": 0, "vectorized": 0, "ok": True,
+                    "message": "该用户还没有记忆条目"}
         todo = [i for i in items if force or not self.store.get_vector(str(i.get("id")))]
-        self._index_many(user_id, todo)
+        if not todo:
+            s = self.store.stats(user_id)
+            return {"indexed": 0, "total": s["total"], "vectorized": s["vectorized"],
+                    "ok": True, "message": "全部 %d 条记忆已有最新向量" % s["total"]}
+        try:
+            self._index_many(user_id, todo)
+        except Exception as e:
+            s = self.store.stats(user_id)
+            return {"indexed": 0, "total": s["total"], "vectorized": s["vectorized"],
+                    "ok": False, "message": "建立向量失败：%s" % e}
         s = self.store.stats(user_id)
-        return {"indexed": len(todo), "total": s["total"], "vectorized": s["vectorized"]}
+        return {"indexed": len(todo), "total": s["total"], "vectorized": s["vectorized"],
+                "ok": True,
+                "message": "已为 %d 条记忆建立向量（共 %d 条）" % (len(todo), s["total"])}
 
     # ---------- 检索 ----------
     def recall(self, user_id: Any, query: Any, top_k: int = 5,

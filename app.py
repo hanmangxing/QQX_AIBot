@@ -2187,11 +2187,18 @@ async def search_memory(payload: Dict[str, Any] = Body(...)):
 async def test_embedding(payload: Dict[str, Any] = Body(...)):
     """测试嵌入服务连通性（可直接用面板里尚未保存的参数试）"""
     data = payload or {}
+    # 跟 bot.py 的 _make_embedder 保持一致：记忆库面板配的是 lwb_embed_api，
+    # 优先用它；为空才退回老的 embedding_* 三个字段。
+    _lwb = current_config.get("lwb_embed_api") or {}
+    _lwb_ok = bool(str(_lwb.get("url") or "").strip())
     client = EmbeddingClient(
-        (data.get("base_url") or current_config.get("embedding_base_url", "")).strip(),
-        (data.get("api_key") or current_config.get("embedding_api_key", "")).strip(),
-        (data.get("model") or current_config.get("embedding_model", "")).strip(),
-        data.get("timeout") or current_config.get("embedding_timeout", 20),
+        (data.get("base_url") or (_lwb.get("url") if _lwb_ok else "")
+         or current_config.get("embedding_base_url", "")).strip(),
+        (data.get("api_key") or (_lwb.get("key") if _lwb_ok else "")
+         or current_config.get("embedding_api_key", "")).strip(),
+        (data.get("model") or (_lwb.get("model") if _lwb_ok else "")
+         or current_config.get("embedding_model", "")).strip(),
+        data.get("timeout") or (60 if _lwb_ok else current_config.get("embedding_timeout", 20)),
     )
     res = await asyncio.to_thread(client.test)
     await log_publisher("SUCCESS" if res.get("ok") else "ERROR",

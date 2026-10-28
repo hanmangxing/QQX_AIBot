@@ -8774,8 +8774,11 @@
                               + '?scope=' + encodeURIComponent(wbScope || 'main'), { method: 'DELETE' });
         const d = await r.json();
         if (d.status !== 'ok') throw new Error(d.message || '删除失败');
-        await wbLoadProfiles('');
-        wbProfileMsg('已删除：' + name, true);
+        await wbLoadProfiles(d.switched_to || '');
+        // 删掉的是当前在用的档时后端会顺手切换/清空，条目区必须跟着重拉
+        await fetchWorldBook();
+        wbProfileMsg(d.switched_to ? ('已删除：' + name + '，已切到：' + d.switched_to)
+                     : ('已删除：' + name + (d.was_active ? '（已无配置档，世界书已清空）' : '')), true);
       } catch (e) { wbProfileMsg(e.message, false); }
     }
 

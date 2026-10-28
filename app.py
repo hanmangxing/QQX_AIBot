@@ -208,6 +208,7 @@ DEFAULT_CONFIG = {
     "comfy_ai_max": 1,               # 一条回复最多出几张
     "comfy_cooldown": 20,            # 出图冷却（秒），防刷屏
     "comfy_guide": "",               # 注入给模型的生图能力说明；留空=用内置默认，支持 {max_rule} 占位符
+    "comfy_lora_node": "",           # LoRA 节点 ID，留空=自动插入一个 LoRA 节点
     "time_inject_enabled": True,     # 是否把「当前真实时间」注入 system 提示词
     "debug_mode": False,          # 调试模式：只打印 API 请求/返回，不改上下文行为
     "time_inject_tmpl": "",
@@ -1323,11 +1324,33 @@ async def wb_profile_rename(payload: Dict[str, Any]):
 
 @app.delete("/api/world_book/profiles/{name}")
 async def wb_profile_delete(name: str, scope: str = "main"):
-    """删除某个世界书配置档（当前正在用的世界书不受影响）。"""
+    """删除某个世界书配置档。
+
+    删掉的正好是当前在用的那个时，自动接管：还有别的配置档就切到第一个，
+    一个都不剩就把世界书清空。否则前端会停在一个已经不存在的档的内容上。
+    """
     sc = _wb_scope_norm(scope)
+    was_active = (_wb_active_profile(sc) == name)
     _wb_profile_store()[sc] = [r for r in _wb_profile_rows(sc) if str(r.get("name")) != name]
     save_config(current_config)
-    return {"status": "ok", "scope": sc}
+    switched_to = None
+    if was_active:
+        rows = _wb_profile_rows(sc)
+        label = "主 Bot" if sc == "main" else "群聊模式"
+        if rows:
+            nxt = rows[0]
+            entries = nxt.get("entries") or []
+            _wb_save_for(sc, entries)
+            _wb_apply_for(sc, entries)
+            switched_to = str(nxt.get("name") or "")
+            await log_publisher("SUCCESS", "世界书配置档「%s」已删除，自动切换到：%s（%s，%d 条）"
+                                % (name, switched_to, label, len(entries)))
+        else:
+            _wb_save_for(sc, [])
+            _wb_apply_for(sc, [])
+            await log_publisher("SUCCESS", "世界书配置档「%s」已删除，已无其他配置档，世界书已清空（%s）"
+                                % (name, label))
+    return {"status": "ok", "scope": sc, "was_active": was_active, "switched_to": switched_to}
 
 
 @app.get("/api/llm/profiles")
@@ -5222,6 +5245,12 @@ async def comfy_status():
         return {"status": "error", "message": "生图客户端未初始化（看控制台 [comfy] 报错）"}
     conn = await c.test_connection()
     q = await c.queue_state() if conn.get("ok") else {"ok": False}
+    try:
+        _wf_now = c.load_workflow(str(current_config.get("comfy_workflow") or "")
+                                  or COMFY.DEFAULT_WORKFLOW_NAME)
+        _lora_node = str(current_config.get("comfy_lora_node") or "") or c.detect_lora_node(_wf_now)
+    except Exception:
+        _lora_node = ""
     return {
         "status": "ok",
         "enabled": bool(current_config.get("comfy_enabled", True)),
@@ -5243,6 +5272,7 @@ async def comfy_status():
         "guide_default": COMFY.build_comfy_guide(current_config.get("comfy_ai_max", 1), ""),
         "guide_template": COMFY.COMFY_GUIDE_TMPL,
         "guide_placeholder": COMFY.GUIDE_MAX_PLACEHOLDER,
+        "lora_node": _lora_node,
     }
 
 
@@ -5317,6 +5347,15 @@ async def comfy_delete_workflow(name: str):
     return {"status": "ok"}
 
 
+@app.get("/api/comfy/loras")
+async def comfy_loras():
+    """列出 ComfyUI 里可用的 LoRA 文件名（给前端下拉用）。"""
+    c = _comfy()
+    if c is None:
+        return {"status": "error", "message": "生图客户端未初始化"}
+    return {"status": "ok", "loras": await c.list_loras()}
+
+
 @app.post("/api/comfy/generate")
 async def comfy_generate(payload: Dict[str, Any] = Body(None)):
     """手动出图。"""
@@ -5346,6 +5385,7 @@ async def comfy_generate(payload: Dict[str, Any] = Body(None)):
             batch=_int(d.get("batch"), 0),
             width=_int(d.get("width"), 0),
             height=_int(d.get("height"), 0),
+            loras=COMFY.parse_loras(d.get("lora") or "") or None,
         )
     except Exception as e:
         return {"status": "error", "message": str(e)}

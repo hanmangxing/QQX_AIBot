@@ -1237,11 +1237,42 @@ def _wb_apply_for(scope: str, entries: list):
     else:
         bot_client.update_world_book(entries)
 
+def _wb_pin_get(scope: str) -> str:
+    return str((current_config.get("wb_active_profile") or {}).get(scope) or "")
+
+
+def _wb_pin_profile(scope: str, name: str):
+    """记住用户显式切换到的配置档名（内容相同时用来区分）。"""
+    pins = current_config.get("wb_active_profile")
+    if not isinstance(pins, dict):
+        pins = {}
+        current_config["wb_active_profile"] = pins
+    if name:
+        pins[scope] = str(name)
+    else:
+        pins.pop(scope, None)
+    save_config(current_config)
+
+
 def _wb_active_profile(scope: str) -> str:
-    """当前世界书对应的是哪个配置档（按内容比对，比中就是它）。"""
+    """当前世界书对应的是哪个配置档。
+
+    先看用户最近显式切过的那个（内容没被改动就认它）——两个配置档内容完全
+    相同时，只按内容比对会永远认第一个，用户会觉得切不过去。
+    显式记录失效（内容被手改过、档被删了）时，退回按内容比对。
+    """
     cur = _wb_load_for(scope)
     if not cur:
         return ""
+    pinned = str((current_config.get("wb_active_profile") or {}).get(scope) or "")
+    if pinned:
+        sig0 = json.dumps(cur, ensure_ascii=False, sort_keys=True)
+        for r in _wb_profile_rows(scope):
+            if str(r.get("name") or "") != pinned:
+                continue
+            if json.dumps(r.get("entries") or [], ensure_ascii=False, sort_keys=True) == sig0:
+                return pinned
+            break
     try:
         sig = json.dumps(cur, ensure_ascii=False, sort_keys=True)
         for r in _wb_profile_rows(scope):
@@ -1296,6 +1327,7 @@ async def wb_profile_apply(payload: Dict[str, Any]):
                     "message": "配置档「%s」是空的（0 条），切过去会把当前 %d 条世界书清掉。" % (name, len(_cur))}
     _wb_save_for(sc, entries)
     _wb_apply_for(sc, entries)
+    _wb_pin_profile(sc, name)
     await log_publisher("SUCCESS", "已切换世界书配置档：%s（%s，%d 条）"
                         % (name, "主 Bot" if sc == "main" else "群聊模式", len(entries)))
     return {"status": "ok", "scope": sc, "entries": entries}
@@ -1331,6 +1363,8 @@ async def wb_profile_delete(name: str, scope: str = "main"):
     """
     sc = _wb_scope_norm(scope)
     was_active = (_wb_active_profile(sc) == name)
+    if _wb_pin_get(sc) == name:
+        _wb_pin_profile(sc, "")
     _wb_profile_store()[sc] = [r for r in _wb_profile_rows(sc) if str(r.get("name")) != name]
     save_config(current_config)
     switched_to = None

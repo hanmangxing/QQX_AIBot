@@ -8713,14 +8713,37 @@
         if (!confirm('已经有叫「' + name + '」的配置档了。\n新建会把它覆盖成空档，确定吗？')) return;
       }
       try {
+        // 切到空档会把当前世界书清空，先把内容存回当前在用的档，别让改动没地方找
+        let backed = '';
+        if (WB_ACTIVE && WB_ACTIVE !== name) {
+          await fetch('/api/world_book/profiles', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scope: wbScope || 'main', name: WB_ACTIVE })
+          });
+          backed = WB_ACTIVE;
+        }
         const r = await fetch('/api/world_book/profiles', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ scope: wbScope || 'main', name: name, empty: true })
         });
         const d = await r.json();
         if (d.status !== 'ok') throw new Error(d.message || '新建失败');
+        // 建完直接切过去，省掉再点一次「切换」
+        const r2 = await fetch('/api/world_book/profiles/apply', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scope: wbScope || 'main', name: name, force_empty: true })
+        });
+        const d2 = await r2.json();
+        if (d2.status !== 'ok') throw new Error(d2.message || '新建后切换失败');
+        WB_ACTIVE = name;
+        worldBookEntries = (d2.entries || []).slice();
+        renderWorldBookCards();
+        updateWorldBookStats();
         await wbLoadProfiles(name);
-        wbProfileMsg('已新建空配置档：' + name + '（点「切换」进去写内容）', true);
+        wbProfileMsg(backed
+          ? ('已新建并切到：' + name + '（原内容已存回「' + backed + '」）')
+          : ('已新建并切到：' + name), true);
+        appendLog('SUCCESS', `[世界书] 已新建空配置档并切换：` + name);
       } catch (e) { wbProfileMsg(e.message, false); }
     }
 

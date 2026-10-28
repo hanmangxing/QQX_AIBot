@@ -6766,7 +6766,11 @@
     }
     async function wbScopeSet(sc) {
       // 切数据源前先把还没落盘的改动存到当前数据源，避免写错地方
-      if (wbSaveTimer) { clearTimeout(wbSaveTimer); wbSaveTimer = null; await saveWorldBookUI(true); }
+      if (wbSaveTimer) {
+        clearTimeout(wbSaveTimer); wbSaveTimer = null;
+        try { await saveWorldBookUI(true); }
+        catch (e) { appendLog('WARN', '切换数据源前保存失败，已跳过（改动仍在页面上）：' + (e && e.message ? e.message : e)); }
+      }
       const r = await tabScopeSet('wb', sc);
       wbScope = (sc === 'claude') ? 'claude' : 'main';
       await wbLoadProfiles();   // 每个数据源各自一套配置档，切档就换列表

@@ -1262,9 +1262,13 @@ def _wb_active_profile(scope: str) -> str:
     显式记录失效（内容被手改过、档被删了）时，退回按内容比对。
     """
     cur = _wb_load_for(scope)
+    pinned = _wb_pin_get(scope)
+    # 世界书是 0 条时内容比对无从谈起，只能靠显式记录认；否则删掉这个空档时
+    # 会认不出它就是当前在用的那个，前端就卡在空条目里回不去。
     if not cur:
+        if pinned and any(str(r.get("name") or "") == pinned for r in _wb_profile_rows(scope)):
+            return pinned
         return ""
-    pinned = str((current_config.get("wb_active_profile") or {}).get(scope) or "")
     if pinned:
         sig0 = json.dumps(cur, ensure_ascii=False, sort_keys=True)
         for r in _wb_profile_rows(scope):

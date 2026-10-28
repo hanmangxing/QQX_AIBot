@@ -59,6 +59,7 @@ class QzoneClient:
         self._skey = ""
         self._p_skey = ""
         self._at = 0.0
+        self._jar: Dict[str, str] = {}
         self._lock = asyncio.Lock()
 
     # ---------------- 登录态 ----------------
@@ -82,6 +83,9 @@ class QzoneClient:
         self._uin = uin
         self._skey = jar.get("skey", "")
         self._p_skey = jar.get("p_skey") or self._skey
+        # 整份 cookie 都留着：发布接口要 p_uin / pt4_token，
+        # 只发 uin+skey+p_skey 会被空间判成身份不完整，直接 500
+        self._jar = jar
         self._at = time.time()
         return True
 
@@ -104,6 +108,8 @@ class QzoneClient:
                 "origin": BASE_URL, "Connection": "keep-alive"}
 
     def _cookies(self) -> Dict[str, str]:
+        if self._jar:
+            return dict(self._jar)
         return {"uin": "o" + self._uin, "skey": self._skey, "p_skey": self._p_skey}
 
     # ---------------- 底层请求 ----------------

@@ -136,6 +136,37 @@ _SIZE_BLOCK_RE = re.compile(
 # 也兼容把尺寸写进提示词标签的属性：<pic prompt="..." size="1024x1536" />
 _SIZE_ATTR_RE = re.compile(r"\bsize\s*=\s*[\"'](?P<v>[^\"']+)[\"']", re.IGNORECASE)
 
+# LoRA：<pic prompt="..." lora="文件名:权重" />（多个用 | 分隔，权重可省=0.8）
+_LORA_ATTR_RE = re.compile(r"\blora\s*=\s*[\"'](?P<v>[^\"']+)[\"']", re.IGNORECASE)
+_LORA_BLOCK_RE = re.compile(
+    r"<\s*(?P<t>lora|loras)\b[^>]*>(?P<v>.*?)<\s*/\s*(?P=t)\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def parse_loras(raw: Any) -> List[Dict[str, Any]]:
+    """把 'a.safetensors:0.8|b:0.6' 解析成 [{'name':..,'weight':..}, ...]。
+
+    权重可省（默认 0.8）；也认分号 / 换行分隔。解析不出返回 []。
+    """
+    s = str(raw or "").strip()
+    if not s:
+        return []
+    out: List[Dict[str, Any]] = []
+    for part in re.split(r"[|;；\n]+", s):
+        part = part.strip()
+        if not part:
+            continue
+        m = re.match(r"^(?P<name>.+?)\s*[:：]\s*(?P<w>-?\d+(?:\.\d+)?)\s*$", part)
+        if m:
+            name, w = m.group("name").strip(), float(m.group("w"))
+        else:
+            name, w = part, 0.8
+        if not name:
+            continue
+        out.append({"name": name, "weight": max(0.0, min(2.0, w))})
+    return out
+
 
 def _snap_size(v: Any) -> int:
     """对齐到 8 的倍数，并夹到 [SIZE_MIN, SIZE_MAX]。"""
@@ -268,7 +299,16 @@ def extract_pic_jobs(text: str, max_count: int = 1) -> Tuple[str, List[Dict[str,
                     size = sh["size"]
                     used_size.add(si)
                     break
-        jobs.append({"prompt": p, "size": size})
+        # (3) LoRA：<pic ... lora="文件名:权重" />
+        lm = _LORA_ATTR_RE.search(m.group(0))
+        if not lm:
+            nxt_l = pic_hits[idx + 1].start() if idx + 1 < len(pic_hits) else len(text)
+            for blk in _LORA_BLOCK_RE.finditer(text):
+                if m.end() <= blk.start() < nxt_l:
+                    lm = blk
+                    break
+        loras = parse_loras(lm.group("v")) if lm else []
+        jobs.append({"prompt": p, "size": size, "loras": loras})
 
     # (3) 还有没配上的分辨率块，按先后顺序补给还没定尺寸的任务
     for si, sh in enumerate(size_hits):
@@ -420,6 +460,7 @@ class ComfyUIClient:
                     info["valid"] = True
                     info["prompt_node"] = self.detect_prompt_node(d)
                     info["output_node"] = self.detect_output_node(d)
+                    info["lora_node"] = self.detect_lora_node(d)
                 else:
                     info["error"] = "不是 API 格式（缺 class_type），请用 ComfyUI 的「导出（API格式）」"
             except Exception as e:
@@ -535,7 +576,8 @@ class ComfyUIClient:
                      seed: int = -1,
                      batch: int = 0,
                      width: int = 0,
-                     height: int = 0) -> Dict[str, Any]:
+                     height: int = 0,
+                     loras: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """把提示词/参数注入工作流，返回可直接提交的 prompt 字典。"""
         wf = json.loads(json.dumps(wf))  # 深拷贝，不动原对象
 
@@ -610,6 +652,96 @@ class ComfyUIClient:
                 wf[_sid]["inputs"]["width"] = _ow
                 wf[_sid]["inputs"]["height"] = _oh
 
+        # LoRA：AI 每张图自己决定用不用（loras 为空 = 不用，工作流原样不动）
+        if loras:
+            wf = self.apply_loras(wf, loras, str(self._cfg("comfy_lora_node", "") or ""))
+
+        return wf
+
+    # ---------------- LoRA ----------------
+
+    # 会输出 MODEL 的加载节点类名（分离加载 / 合并加载都覆盖）
+    MODEL_SOURCE_TYPES = ("UNETLoader", "CheckpointLoaderSimple", "CheckpointLoader",
+                          "DiffusionLoader", "CheckpointLoaderAdvanced")
+
+    @classmethod
+    def detect_lora_node(cls, wf: Dict[str, Any]) -> str:
+        """找工作流里已有的 LoRA 加载节点（类名含 LoraLoader），没有返回 ''。"""
+        for k, v in wf.items():
+            if isinstance(v, dict) and "LoraLoader" in str(v.get("class_type") or ""):
+                return str(k)
+        return ""
+
+    @classmethod
+    def _model_sources(cls, wf: Dict[str, Any]) -> List[str]:
+        out = []
+        for k, v in wf.items():
+            if isinstance(v, dict) and str(v.get("class_type") or "") in cls.MODEL_SOURCE_TYPES:
+                out.append(str(k))
+        return out
+
+    @staticmethod
+    def _new_lora_id(wf: Dict[str, Any], i: int) -> str:
+        n = i + 1
+        while ("lora_%d" % n) in wf:
+            n += 1
+        return "lora_%d" % n
+
+    def apply_loras(self, wf: Dict[str, Any],
+                    loras: List[Dict[str, Any]],
+                    lora_node: str = "") -> Dict[str, Any]:
+        """把 LoRA 作用到工作流上。loras 为空 = 不用（原样返回）。
+
+        指定了 comfy_lora_node（工作流里已有的 LoRA 节点）就填那个节点，
+        否则自动在「模型来源」和「采样器」之间插 LoraLoaderModelOnly。
+        只改 MODEL、不动 CLIP（适配 UNETLoader/CLIPLoader 分离加载的底模）。
+        """
+        loras = [l for l in (loras or []) if l.get("name")]
+        if not loras:
+            return wf
+
+        # 1) 用工作流里已有的 LoRA 节点（用户显式指定）
+        if lora_node and lora_node in wf:
+            prev = lora_node
+            for i, lo in enumerate(loras):
+                if i == 0:
+                    ins = wf[lora_node].setdefault("inputs", {})
+                    ins["lora_name"] = lo["name"]
+                    ins["strength_model"] = float(lo.get("weight", 0.8))
+                    if "strength_clip" in ins:
+                        ins["strength_clip"] = float(lo.get("weight", 0.8))
+                else:
+                    nid = self._new_lora_id(wf, i)
+                    wf[nid] = {"class_type": "LoraLoaderModelOnly",
+                               "inputs": {"lora_name": lo["name"],
+                                          "strength_model": float(lo.get("weight", 0.8)),
+                                          "model": [prev, 0]},
+                               "_meta": {"title": "LoRA: %s" % lo["name"]}}
+                    prev = nid
+            return wf
+
+        # 2) 自动插一条 LoraLoaderModelOnly 链
+        srcs = self._model_sources(wf)
+        if not srcs:
+            return wf
+        src = srcs[0]
+        consumers = [k for k, v in wf.items()
+                     if isinstance(v, dict) and isinstance(v.get("inputs"), dict)
+                     and isinstance(v["inputs"].get("model"), list)
+                     and str(v["inputs"]["model"][0]) == src]
+        if not consumers:
+            return wf
+        prev = src
+        for i, lo in enumerate(loras):
+            nid = self._new_lora_id(wf, i)
+            wf[nid] = {"class_type": "LoraLoaderModelOnly",
+                       "inputs": {"lora_name": lo["name"],
+                                  "strength_model": float(lo.get("weight", 0.8)),
+                                  "model": [prev, 0]},
+                       "_meta": {"title": "LoRA: %s" % lo["name"]}}
+            prev = nid
+        for c in consumers:
+            wf[c]["inputs"]["model"] = [prev, 0]
         return wf
 
     # ---------------- HTTP ----------------
@@ -658,6 +790,20 @@ class ComfyUIClient:
         except Exception:
             return False
 
+    async def list_loras(self) -> List[str]:
+        """从 ComfyUI 拉可用 LoRA 文件名（给前端下拉）。拉不到返回 []。"""
+        if aiohttp is None:
+            return []
+        try:
+            async with aiohttp.ClientSession() as s:
+                d = await self._get_json(s, "/object_info/LoraLoaderModelOnly", timeout=15)
+            node = (d or {}).get("LoraLoaderModelOnly") or {}
+            req = ((node.get("input") or {}).get("required") or {})
+            names = (req.get("lora_name") or [[]])[0]
+            return [str(x) for x in names]
+        except Exception:
+            return []
+
     # ---------------- 出图 ----------------
 
     async def generate(self,
@@ -670,6 +816,7 @@ class ComfyUIClient:
                        batch: int = 0,
                        width: int = 0,
                        height: int = 0,
+                       loras: Optional[List[Dict[str, Any]]] = None,
                        progress=None) -> Dict[str, Any]:
         """跑一次生图。
 
@@ -688,7 +835,8 @@ class ComfyUIClient:
         wf = self.build_prompt(raw, prompt.strip(),
                                prompt_node=prompt_node, negative=negative,
                                steps=steps, seed=seed, batch=batch,
-                               width=width, height=height)
+                               width=width, height=height,
+                               loras=loras)
         # 读回工作流里实际生效的出图尺寸（用于日志 / 返回值）
         _used_w, _used_h = read_workflow_size(wf)
 
@@ -870,7 +1018,7 @@ COMFY_GUIDE_TMPL = """【生图能力｜你可以自己画图】
 4. prompt 里只写英文标签，不要写中文、不要写解释、不要写引号。
 5. 主人明确要求画时（例如「画一张看看」），照办。
 6. 标签必须写在 game_content 的 content 参数里、跟正文放在一起。
-{size_rule}"""
+{size_rule}{multi_rule}{lora_rule}"""
 
 # 占位符：渲染时会被「单条回复最多出图」对应的规则文案替换
 GUIDE_MAX_PLACEHOLDER = "{max_rule}"
@@ -886,6 +1034,35 @@ SIZE_RULE = (
     "· 拿不准 → 1024x1024\n"
     "不写就用工作流默认尺寸。这个块跟提示词块一样会被系统摘掉，主人看不到；"
     "它会被填进绘图工作流的宽高。"
+)
+
+# 占位符：渲染时会被「LoRA 怎么写」的说明替换（自定义文案里没写它会自动补在末尾）
+GUIDE_LORA_PLACEHOLDER = "{lora_rule}"
+
+LORA_RULE = (
+    "LoRA（可选）：先看这张图里出现了哪些角色 —— 只要其中有任何一个角色是带专属 LoRA 的"
+    "（角色设定 / 世界书里写了它的 LoRA 文件名），就要把这些角色的 LoRA 全部写进 lora 属性：\n"
+    "<pic prompt=\"2girls, A, B, ...\" lora=\"A的角色LoRA.safetensors:0.8|B的角色LoRA.safetensors:0.8\" />\n"
+    "· 一张图里有两个及以上角色需要 LoRA，就用 | 把它们连起来 —— 别只写一个，"
+    "更别因为其中一个角色不需要 LoRA 就一个都不写。\n"
+    "· 权重 0.6~1.0，拿不准写 0.8。\n"
+    "· 只有整张图里一个带 LoRA 的角色都没有时，才整个不写（留空 = 不用 LoRA）。\n"
+    "· 只写角色设定里真实给过的文件名，不要自己编。"
+)
+
+# 占位符：渲染时会被「多人 / 合照怎么写」的说明替换
+GUIDE_MULTI_PLACEHOLDER = "{multi_rule}"
+
+MULTI_RULE = (
+    "多人 / 合照（重要）：\n"
+    "· 一张图里有几个角色，就要把这几个角色各自的标准提示词（角色设定 / 世界书里给的 tag）"
+    "全部拼进 prompt —— 一个都不能漏，也不要用自己编的 tag 顶替已经给过的标准提示词；"
+    "只有确实没给标准提示词的角色，才自己补特征 tag。\n"
+    "· 人数标签要改对：1 个用 1girl，2 个用 2girls，更多用 multiple girls"
+    "（男角色用 1boy / 2boys / multiple boys）；并把每个人标准提示词里的 solo 去掉，"
+    "否则模型只会画一个人。\n"
+    "· 每个角色的 tag 依次用逗号连成一段，顺序清楚、别互相穿插。\n"
+    "· 这张图里凡是带 LoRA 的角色，LoRA 也都要写上。"
 )
 
 
@@ -909,9 +1086,22 @@ def build_comfy_guide(max_n: int = 1, custom: str = "") -> str:
     text = text.replace(GUIDE_MAX_PLACEHOLDER, rule)
     # 分辨率说明：自定义文案里既没写占位符、也没自己写 <size>，就自动补在末尾，
     # 保证模型一定知道「可以自己挑横图 / 竖图」
+    extras: List[str] = []
     if GUIDE_SIZE_PLACEHOLDER in text:
         text = text.replace(GUIDE_SIZE_PLACEHOLDER, SIZE_RULE)
     elif "<size>" not in text:
-        text = text.rstrip() + "\n" + SIZE_RULE
+        extras.append(SIZE_RULE)
+    # 多人 / 合照说明：自定义文案里没提到就自动补上
+    if GUIDE_MULTI_PLACEHOLDER in text:
+        text = text.replace(GUIDE_MULTI_PLACEHOLDER, MULTI_RULE)
+    elif ("多人" not in text and "合照" not in text):
+        extras.append(MULTI_RULE)
+    # LoRA 说明：自定义文案里没提到 lora 就自动补在末尾
+    if GUIDE_LORA_PLACEHOLDER in text:
+        text = text.replace(GUIDE_LORA_PLACEHOLDER, LORA_RULE)
+    elif "lora=" not in text:
+        extras.append(LORA_RULE)
+    if extras:
+        text = text.rstrip() + "\n" + "\n".join(extras)
     return text
 

@@ -46,6 +46,10 @@ PIC_RULE = """【想发图的时候】
 不要解释这个标签，也不要把它当成话题说出来。
 注意：<pic> 和 {marker} 不能同时出现，要么说话、要么发图。
 想指定尺寸就在后面另起一行写 <size>宽x高</size>（例：<size>1024x1024</size>），不写就按默认。
+画多个人 / 合照时，把这几个角色的标准提示词都拼进 prompt，人数标签改成 2girls / multiple girls 并去掉 solo，别漏角色、也别自己编已经给过的 tag。
+只要这张图里出现了带专属 LoRA 的角色（设定里写了文件名），就要把它们的 LoRA 都带上：
+lora="文件名:权重"，多个用 | 连接（例：<pic prompt="..." lora="a.safetensors:0.8|b.safetensors:0.8" />）；
+整张图一个带 LoRA 的角色都没有时才不写。
 """
 
 DEFAULT_TEMPLATE = """{persona}
@@ -943,7 +947,8 @@ class ClaudeGroupMode:
             w, h = job.get("size") or (0, 0)
             await self.log("INFO", f"[群聊] 自主出图：{prompt[:80]}｜尺寸 {format_size(w, h) or '工作流默认'}")
             try:
-                res = await comfy.generate(prompt, width=w, height=h)
+                res = await comfy.generate(prompt, width=w, height=h,
+                                           loras=job.get("loras") or None)
             except Exception as e:
                 await self.log("ERROR", f"[群聊] 生图调用异常：{e}")
                 continue

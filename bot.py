@@ -2001,9 +2001,14 @@ class OneBotClient:
                             _pp = str(_job.get("prompt") or "")
                             _sw, _sh = _job.get("size") or (0, 0)
                             _sztxt = COMFY.format_size(_sw, _sh) or "工作流默认"
-                            await self.log("INFO", f"[生图] AI 自主出图：{_pp[:80]}｜尺寸 {_sztxt}")
+                            _loras = _job.get("loras") or []
+                            _lotxt = ("｜LoRA " + "、".join(
+                                "%s(%.2f)" % (l.get("name"), float(l.get("weight", 0.8)))
+                                for l in _loras)) if _loras else ""
+                            await self.log("INFO", f"[生图] AI 自主出图：{_pp[:80]}｜尺寸 {_sztxt}{_lotxt}")
                             try:
-                                _res = await self.comfy.generate(_pp, width=_sw, height=_sh)
+                                _res = await self.comfy.generate(_pp, width=_sw, height=_sh,
+                                                                 loras=_loras or None)
                             except Exception as _e:
                                 await self.log("ERROR", f"[生图] 调用异常：{_e}")
                                 continue

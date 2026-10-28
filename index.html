@@ -4091,12 +4091,6 @@
             </span>
         </h2>
       </div>
-      <div class="flex items-center space-x-2">
-        <button onclick="saveWorldBookUI()" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-medium rounded text-xs transition shadow flex items-center gap-1">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>
-          <span>保存设定</span>
-        </button>
-      </div>
     </div>
 
     <!-- 酒馆蓝绿灯指引说明 -->
@@ -4139,10 +4133,7 @@
 
     <!-- 底部状态栏 -->
     <div class="p-3 bg-[#0d1117] border-t border-borderDark flex items-center justify-between text-[11px]">
-      <span class="text-gray-400">改动会自动保存（停手约 1 秒），也可以点右上角或此处的“保存设定”</span>
-      <button onclick="saveWorldBookUI()" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs transition">
-        保存全部设定
-      </button>
+      <span class="text-gray-400">改动会自动保存（停手约 1 秒），无需手动点保存</span>
     </div>
     </div>
   </main>
@@ -5548,16 +5539,6 @@
         if (res.ok) {
           if (!quiet) appendLog('SUCCESS', `世界书设定已成功保存并热重载（当前共 ${worldBookEntries.length} 条）`);
           updateWorldBookStats();
-          const btns = quiet ? [] : document.querySelectorAll('#viewWorldBook button[onclick="saveWorldBookUI()"]');
-          btns.forEach(btn => {
-            const orig = btn.innerHTML;
-            btn.innerHTML = '<span>已保存 ✓</span>';
-            btn.classList.add('bg-emerald-600');
-            setTimeout(() => {
-              btn.innerHTML = orig;
-              btn.classList.remove('bg-emerald-600');
-            }, 1500);
-          });
         } else {
           appendLog('ERROR', '保存世界书失败: ' + (data.message || '未知错误'));
         }

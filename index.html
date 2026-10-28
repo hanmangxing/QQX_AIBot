@@ -8638,6 +8638,7 @@
 
     // ---------------- 世界书配置档（主 Bot / 群聊模式 各自独立一套） ----------------
     let WB_PROFILES = [];
+    let WB_ACTIVE = '';
     // wbScopeLabel 上面已经定义过（世界书导入导出那段），这里不再重复定义
 
     function wbProfileMsg(t, ok) {
@@ -8655,6 +8656,7 @@
         const r = await fetch('/api/world_book/profiles?scope=' + encodeURIComponent(wbScope || 'main'));
         const d = await r.json();
         WB_PROFILES = d.profiles || [];
+        WB_ACTIVE = d.active || '';
         const cur = keep !== undefined ? keep : (d.active || sel.value);
         sel.innerHTML = WB_PROFILES.length
           ? WB_PROFILES.map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}（${p.count} 条）${p.name === d.active ? ' ✅ 当前' : ''}</option>`).join('')
@@ -8667,26 +8669,21 @@
       const sel = document.getElementById('wbProfileSel');
       const name = sel ? sel.value : '';
       if (!name) return;
+      if (name === WB_ACTIVE) { wbProfileMsg('已经在用这个配置档了', false); return; }
       try {
+        // 一次带 force_empty 直接落，不再走 need_confirm 往返 + 弹窗：
+        // 切配置档本来就是用户的明确动作，再问一遍只会卡顿。
         const r = await fetch('/api/world_book/profiles/apply', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ scope: wbScope || 'main', name: name })
+          body: JSON.stringify({ scope: wbScope || 'main', name: name, force_empty: true })
         });
         const d = await r.json();
-        if (d.status === 'need_confirm') {
-          if (!confirm(d.message + '\n\n确定要切换到这个空配置档吗？')) { wbProfileMsg('已取消切换', false); return; }
-          const r2 = await fetch('/api/world_book/profiles/apply', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ scope: wbScope || 'main', name: name, force_empty: true })
-          });
-          const d2 = await r2.json();
-          if (d2.status !== 'ok') throw new Error(d2.message || '切换失败');
-          await fetchWorldBook();
-          wbProfileMsg('已切换到：' + name, true);
-          return;
-        }
         if (d.status !== 'ok') throw new Error(d.message || '切换失败');
-        await fetchWorldBook();
+        WB_ACTIVE = name;
+        worldBookEntries = (d.entries || []).slice();
+        renderWorldBookCards();
+        updateWorldBookStats();
+        await wbLoadProfiles(name);
         wbProfileMsg('已切换到：' + name, true);
         appendLog('SUCCESS', `[世界书] ${wbScopeLabel(wbScope)} 已切换到配置档：` + name);
       } catch (e) { wbProfileMsg(e.message, false); }

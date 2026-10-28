@@ -25,6 +25,7 @@ from memory import EmbeddingClient, MEMORY_KIND_LABEL
 
 # 生图（ComfyUI）：工作流管理 + 出图
 import comfyui as COMFY
+import nai as NAI
 
 # SnowLuma 协议端：安装目录推导 + OneBot accessToken 自动拉取（纯标准库，独立模块避免循环依赖）
 try:
@@ -211,6 +212,18 @@ DEFAULT_CONFIG = {
     "comfy_cooldown": 20,            # 出图冷却（秒），防刷屏
     "comfy_guide": "",               # 注入给模型的生图能力说明；留空=用内置默认，支持 {max_rule} 占位符
     "comfy_lora_node": "",           # LoRA 节点 ID，留空=自动插入一个 LoRA 节点
+    # ---- 生图端口：comfyui（默认）/ nai ----
+    "draw_backend": "comfyui",       # 当前生图端口
+    "nai_token": "",                 # NovelAI 持久化 API token
+    "nai_base_url": "https://image.novelai.net",  # 官方地址（走中转就改成中转地址）
+    "nai_model": "nai-diffusion-5-full",          # 模型
+    "nai_steps": 28,                 # 步数
+    "nai_scale": 5.0,                # 提示词引导强度
+    "nai_sampler": "k_euler_ancestral",
+    "nai_uc_preset": 0,              # 0=Heavy 1=Light 2=Human Focus 3=None
+    "nai_quality": True,             # 自动带画质词
+    "nai_negative": "",              # 额外负向词
+    "nai_proxy": "",                 # 出海代理（如 http://127.0.0.1:7890），留空=走系统代理
     "time_inject_enabled": True,     # 是否把「当前真实时间」注入 system 提示词
     "debug_mode": False,          # 调试模式：只打印 API 请求/返回，不改上下文行为
     "time_inject_tmpl": "",
@@ -5282,17 +5295,59 @@ async def lwb_context_preview(user_id: str):
 
 # ---------------------------------------------------------------- 生图（ComfyUI）
 
+def _draw_backend() -> str:
+    """当前生图端口：comfyui / nai。"""
+    try:
+        b = str(current_config.get("draw_backend") or "comfyui").strip().lower()
+    except Exception:
+        b = "comfyui"
+    return b if b in ("comfyui", "nai") else "comfyui"
+
+
 def _comfy():
-    """取生图客户端（挂在 bot_client 上，配置热更新共享同一个 config 字典）。"""
+    """取 ComfyUI 客户端（挂在 bot_client 上，配置热更新共享同一个 config 字典）。"""
+    return getattr(bot_client, "comfy", None)
+
+
+def _draw():
+    """取当前生图端口的客户端（ComfyUI / NovelAI 二选一）。"""
+    if _draw_backend() == "nai":
+        return getattr(bot_client, "nai", None)
     return getattr(bot_client, "comfy", None)
 
 
 @app.get("/api/comfy/status")
 async def comfy_status():
     """生图后端状态：连接、队列、当前工作流、图片数。"""
-    c = _comfy()
+    c = _draw()
     if c is None:
-        return {"status": "error", "message": "生图客户端未初始化（看控制台 [comfy] 报错）"}
+        return {"status": "error", "message": "生图客户端未初始化（看控制台 [comfy] / [nai] 报错）"}
+    if _draw_backend() == "nai":
+        acc = await c.account()
+        return {
+            "status": "ok",
+            "backend": "nai",
+            "enabled": bool(current_config.get("comfy_enabled", True)),
+            "ai_draw": bool(current_config.get("comfy_ai_draw", True)),
+            "ai_max": int(current_config.get("comfy_ai_max", 1) or 1),
+            "cooldown": int(current_config.get("comfy_cooldown", 20) or 0),
+            "server": c.server,
+            "connection": {"ok": bool(acc.get("ok")), "message": acc.get("message") or ""},
+            "account": acc,
+            "model": str(current_config.get("nai_model") or NAI.DEFAULT_MODEL),
+            "models": [{"id": _m, "name": _n} for _m, _n in NAI.MODELS],
+            "samplers": list(NAI.SAMPLERS),
+            "uc_presets": [{"id": _i, "name": _n} for _i, _n in NAI.UC_PRESETS],
+            "output_dir": c.output_dir,
+            "image_count": len(c.list_images(limit=100000)),
+            "guide_custom": str(current_config.get("comfy_guide") or ""),
+            "guide_effective": NAI.build_nai_guide(
+                current_config.get("comfy_ai_max", 1),
+                str(current_config.get("comfy_guide") or "")),
+            "guide_default": NAI.build_nai_guide(current_config.get("comfy_ai_max", 1), ""),
+            "guide_template": NAI.NAI_GUIDE_TMPL,
+            "guide_placeholder": NAI.GUIDE_MAX_PLACEHOLDER,
+        }
     conn = await c.test_connection()
     q = await c.queue_state() if conn.get("ok") else {"ok": False}
     try:
@@ -5303,6 +5358,7 @@ async def comfy_status():
         _lora_node = ""
     return {
         "status": "ok",
+        "backend": "comfyui",
         "enabled": bool(current_config.get("comfy_enabled", True)),
         "ai_draw": bool(current_config.get("comfy_ai_draw", True)),
         "ai_max": int(current_config.get("comfy_ai_max", 1) or 1),
@@ -5406,10 +5462,68 @@ async def comfy_loras():
     return {"status": "ok", "loras": await c.list_loras()}
 
 
+# ---- 生图端口切换 + NovelAI 配置 ----
+
+NAI_KEYS = ("nai_token", "nai_base_url", "nai_proxy", "nai_model", "nai_steps", "nai_scale",
+            "nai_sampler", "nai_uc_preset", "nai_quality", "nai_negative",
+            "comfy_enabled", "comfy_ai_draw", "comfy_ai_max", "comfy_cooldown", "comfy_guide")
+
+
+@app.get("/api/draw/backend")
+async def draw_backend_get():
+    """当前生图端口（comfyui / nai）。"""
+    return {"status": "ok", "backend": _draw_backend(),
+            "comfy_ready": getattr(bot_client, "comfy", None) is not None,
+            "nai_ready": getattr(bot_client, "nai", None) is not None}
+
+
+@app.post("/api/draw/backend")
+async def draw_backend_set(payload: Dict[str, Any] = Body(None)):
+    """切换生图端口：comfyui <-> nai。"""
+    d = payload or {}
+    b = str(d.get("backend") or "").strip().lower()
+    if b not in ("comfyui", "nai"):
+        return {"status": "error", "message": "backend 只能是 comfyui 或 nai"}
+    if b == "nai" and getattr(bot_client, "nai", None) is None:
+        return {"status": "error", "message": "NovelAI 客户端没起来（看控制台 [nai] 报错）"}
+    if b == "comfyui" and getattr(bot_client, "comfy", None) is None:
+        return {"status": "error", "message": "ComfyUI 客户端没起来（看控制台 [comfy] 报错）"}
+    current_config["draw_backend"] = b
+    save_config(current_config)
+    try:
+        bot_client.update_config(current_config)
+    except Exception:
+        pass
+    await log_publisher("SUCCESS", "[生图] 已切换到 %s"
+                        % ("NovelAI" if b == "nai" else "ComfyUI"))
+    return {"status": "ok", "backend": b}
+
+
+@app.get("/api/nai/config")
+async def nai_get_config():
+    """读 NovelAI 生图配置。"""
+    return {"status": "ok", "config": {k: current_config.get(k) for k in NAI_KEYS}}
+
+
+@app.post("/api/nai/config")
+async def nai_save_config(payload: Dict[str, Any] = Body(None)):
+    """保存 NovelAI 生图配置（即时生效）。"""
+    d = payload or {}
+    for k in NAI_KEYS:
+        if k in d:
+            current_config[k] = d[k]
+    save_config(current_config)
+    try:
+        bot_client.update_config(current_config)
+    except Exception:
+        pass
+    return {"status": "ok", "config": {k: current_config.get(k) for k in NAI_KEYS}}
+
+
 @app.post("/api/comfy/generate")
 async def comfy_generate(payload: Dict[str, Any] = Body(None)):
     """手动出图。"""
-    c = _comfy()
+    c = _draw()
     if c is None:
         return {"status": "error", "message": "生图客户端未初始化"}
     d = payload or {}

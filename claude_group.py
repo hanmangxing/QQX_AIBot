@@ -52,6 +52,16 @@ lora="文件名:权重"，多个用 | 连接（例：<pic prompt="..." lora="a.s
 整张图一个带 LoRA 的角色都没有时才不写。
 """
 
+# NovelAI 版生图说明（切到 NAI 端口时用它）
+PIC_RULE_NAI = """【生图能力】你可以在回复正文里写生图标签，系统会自动出图发出去（标签会被摘掉，群友看不到）。
+格式：<pic prompt="英文,逗号,分隔的标签" />
+想指定尺寸就在后面另起一行写 <size>宽x高</size>（例：<size>1216x832</size>），不写就按默认 832x1216。
+多人 / 合照：用 || 把角色分开写 —— || 前面是画面公共部分，之后每段是一个角色的专属标签，
+例：<pic prompt="2girls, outdoors || luo tianyi, long grey hair || luluka, pink short hair" />
+人数标签写在第一段（2girls / multiple girls），别漏角色、也别自己编已经给过的标签。
+NovelAI 是纯标签流：不要写自然语言长句；画质词和负向词系统会自己带，不用写。
+"""
+
 DEFAULT_TEMPLATE = """{persona}
 
 {worldbook}{memory}{notebook}
@@ -1106,7 +1116,8 @@ class ClaudeGroupMode:
         if not self._cfg("pic_enabled", True):
             return ""
         marker = str(self._cfg("silence_marker") or "<silence />")
-        guide = str(self._cfg("pic_guide") or "").strip() or PIC_RULE
+        _is_nai = str(self._cfg("draw_backend") or "comfyui").strip().lower() == "nai"
+        guide = str(self._cfg("pic_guide") or "").strip() or (PIC_RULE_NAI if _is_nai else PIC_RULE)
         return guide.replace("{marker}", marker)
 
     def _preset_extras(self) -> str:

@@ -55,6 +55,7 @@ import notebook_tools as NB_TOOLS
 
 # 生图（ComfyUI）：复刻 astrbot_plugin_comfyui_pro 的 <pic> 标签机制
 import comfyui as COMFY
+import nai as NAI
 
 # 解决 Windows 控制台默认 GBK 编码输出特殊字符崩溃的问题
 if hasattr(sys.stdout, "reconfigure"):
@@ -79,6 +80,36 @@ def build_comfy_guide(max_n: int = 1, custom: str = "") -> str:
 
 # 兼容旧引用
 COMFY_GUIDE = build_comfy_guide(1)
+
+
+# ---------------- 【生图端口】ComfyUI / NovelAI 二选一 ----------------
+
+DRAW_BACKENDS = ("comfyui", "nai")
+
+
+def draw_backend_of(config) -> str:
+    """当前生图端口：comfyui / nai。"""
+    try:
+        b = str((config or {}).get("draw_backend") or "comfyui").strip().lower()
+    except Exception:
+        b = "comfyui"
+    return b if b in DRAW_BACKENDS else "comfyui"
+
+
+def draw_client_of(bot):
+    """按当前生图端口取客户端；没配好返回 None。"""
+    if bot is None:
+        return None
+    if draw_backend_of(getattr(bot, "config", None)) == "nai":
+        return getattr(bot, "nai", None)
+    return getattr(bot, "comfy", None)
+
+
+def build_draw_guide(max_n: int = 1, custom: str = "", backend: str = "") -> str:
+    """按当前生图端口渲染生图能力说明（两套文案不同）。"""
+    if str(backend or "").strip().lower() == "nai":
+        return NAI.build_nai_guide(max_n, custom)
+    return COMFY.build_comfy_guide(max_n, custom)
 
 
 # ==================== 当前时间注入（让模型知道「今天几号、几点几分」） ====================
@@ -1102,6 +1133,14 @@ class OneBotClient:
         except Exception as _e:
             print(f"[comfy] 生图客户端初始化失败：{_e}")
             self.comfy = None
+        # 生图：NovelAI 客户端（与 ComfyUI 并列，按「生图端口」切换；图落同一个目录）
+        try:
+            self.nai = NAI.NAIClient(
+                os.path.dirname(os.path.abspath(__file__)), self.config,
+                output_dir=(self.comfy.output_dir if self.comfy else None))
+        except Exception as _e:
+            print(f"[nai] 生图客户端初始化失败：{_e}")
+            self.nai = None
         self._last_draw_at = 0.0
         self.world_book: List[Dict[str, Any]] = []
 
@@ -1114,7 +1153,7 @@ class OneBotClient:
                 data_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)), CGM.DATA_DIR),
                 make_embedder=self._make_embedder,
                 lwb_wire=self._wire_lwb_callers,
-                comfy_getter=lambda: self.comfy,
+                comfy_getter=lambda: draw_client_of(self),
                 meme_getter=lambda: getattr(self, "sticker", None),
                 save_images=self._save_qq_images,
                 steal_images=self._steal_group_images,
@@ -1310,6 +1349,12 @@ class OneBotClient:
 
     def update_config(self, new_config: Dict[str, Any]):
         self.config.update(new_config)
+        _nai = getattr(self, "nai", None)
+        if _nai is not None:
+            try:
+                _nai.update_config(self.config)
+            except Exception:
+                pass
         self.refresh_embedder()
 
     def update_world_book(self, new_world_book: List[Dict[str, Any]]):
@@ -1706,10 +1751,11 @@ class OneBotClient:
             if self.config.get("time_inject_enabled", True):
                 messages[0]["content"] += "\n\n" + build_time_block(self.config)
 
-            if self.config.get("comfy_enabled", True) and self.comfy is not None:
+            if self.config.get("comfy_enabled", True) and draw_client_of(self) is not None:
                 _cmax = int(self.config.get("comfy_ai_max", 1) or 1)
-                messages[0]["content"] += "\n\n" + build_comfy_guide(
-                    _cmax, str(self.config.get("comfy_guide") or ""))
+                messages[0]["content"] += "\n\n" + build_draw_guide(
+                    _cmax, str(self.config.get("comfy_guide") or ""),
+                    draw_backend_of(self.config))
             # 4.36 【表情包】告诉模型「你可以自己挑一张发」
             if self.config.get("sticker_send_enabled", True) and getattr(self, "sticker", None) is not None:
                 try:
@@ -1983,7 +2029,7 @@ class OneBotClient:
 
             # 7.1 【生图】真正出图，并把图发给主人
             if _pic_jobs:
-                if self.comfy is None:
+                if draw_client_of(self) is None:
                     await self.log("ERROR", "[生图] 客户端不可用，跳过")
                 elif not self.config.get("comfy_enabled", True):
                     await self.log("INFO", "[生图] 总开关已关（comfy_enabled=false），跳过")
@@ -2006,9 +2052,10 @@ class OneBotClient:
                                 "%s(%.2f)" % (l.get("name"), float(l.get("weight", 0.8)))
                                 for l in _loras)) if _loras else ""
                             await self.log("INFO", f"[生图] AI 自主出图：{_pp[:80]}｜尺寸 {_sztxt}{_lotxt}")
+                            _client = draw_client_of(self)
                             try:
-                                _res = await self.comfy.generate(_pp, width=_sw, height=_sh,
-                                                                 loras=_loras or None)
+                                _res = await _client.generate(_pp, width=_sw, height=_sh,
+                                                              loras=_loras or None)
                             except Exception as _e:
                                 await self.log("ERROR", f"[生图] 调用异常：{_e}")
                                 continue

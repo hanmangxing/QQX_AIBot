@@ -517,6 +517,37 @@
           </div>
 
 
+        <!-- 生图端口：ComfyUI / NovelAI -->
+        <div class="bg-card border border-borderDark rounded-xl p-5 shadow-lg">
+          <h2 class="text-sm font-bold text-gray-200 mb-1 flex items-center gap-2">
+            <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            生图端口
+          </h2>
+          <p class="text-[11px] text-gray-500 mb-4">决定 QQX_AIBot 用哪台后端出图。两边都吃同一套 &lt;pic&gt; 标签；差别在 ComfyUI 走本地工作流、NovelAI 走云端 API（要 Opus 订阅 + API token）。</p>
+
+          <div class="space-y-3">
+            <label class="flex items-start gap-3 cursor-pointer group">
+              <input id="drawComfy" type="radio" name="drawBackend" value="comfyui" onchange="drawPick('comfyui')" class="mt-0.5 accent-cyan-500 w-4 h-4 shrink-0">
+              <span class="min-w-0">
+                <span class="text-xs text-gray-200 block group-hover:text-white">ComfyUI（本地）</span>
+                <span class="text-[11px] text-gray-500 block mt-1 leading-relaxed">连本机的 ComfyUI：工作流、LoRA、任意分辨率都归你控制，出图不花钱，但吃显卡。</span>
+              </span>
+            </label>
+            <label class="flex items-start gap-3 cursor-pointer group">
+              <input id="drawNai" type="radio" name="drawBackend" value="nai" onchange="drawPick('nai')" class="mt-0.5 accent-cyan-500 w-4 h-4 shrink-0">
+              <span class="min-w-0">
+                <span class="text-xs text-gray-200 block group-hover:text-white">NovelAI（云端）</span>
+                <span class="text-[11px] text-gray-500 block mt-1 leading-relaxed">走 NovelAI 官方 API，不占显卡；多角色用「角色分区」（用 || 分隔）分开写，比本地更容易画对。要在生图页填 API token，账号需 Opus 档。</span>
+              </span>
+            </label>
+          </div>
+
+          <div class="mt-4 flex items-center gap-3">
+            <button onclick="drawSave()" class="px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 text-white rounded text-xs transition">切换生图端口</button>
+            <span id="drawMsg" class="text-[11px] font-mono text-gray-400"></span>
+          </div>
+        </div>
+
         <div class="bg-card border border-borderDark rounded-xl p-5 shadow-lg">
           <h2 class="text-sm font-bold text-gray-200 mb-1 flex items-center gap-2">
             <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
@@ -2307,6 +2338,69 @@
 
       <!-- 左栏：状态 / 设置 / 工作流 / 手动出图 -->
       <div class="lg:col-span-5 h-full flex flex-col min-h-0 space-y-4 overflow-y-auto pr-1">
+
+        <!-- NovelAI 设置（切到 NAI 端口时显示） -->
+        <div id="naiCard" class="bg-card border border-borderDark rounded-xl p-4 shadow-lg flex-shrink-0" style="display:none">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-2">
+            🖼️ NovelAI 后端
+            <span id="naiConnBadge" class="text-[10px] px-2 py-0.5 rounded bg-gray-800 text-gray-300 border border-gray-700 font-mono">未检测</span>
+          </h2>
+          <div class="space-y-3 text-xs">
+            <div>
+              <label class="block text-gray-400 mb-1">API token（官网 Account → Get Persistent API Token）</label>
+              <input id="naiToken" type="password" placeholder="粘贴后自动拉取账户信息" onchange="naiAutoPull()" class="w-full bg-terminal border border-borderDark focus:border-cyan-500 rounded-lg px-2 py-1.5 text-gray-200 font-mono">
+            </div>
+            <div>
+              <label class="block text-gray-400 mb-1">接口地址</label>
+              <input id="naiBaseUrl" placeholder="https://image.novelai.net" onchange="naiAutoPull()" class="w-full bg-terminal border border-borderDark focus:border-cyan-500 rounded-lg px-2 py-1.5 text-gray-200 font-mono">
+            </div>
+            <div>
+              <label class="block text-gray-400 mb-1">出海代理（本机到 NovelAI 不通时必填）</label>
+              <input id="naiProxy" placeholder="http://127.0.0.1:7890（留空=走系统代理）" onchange="naiAutoPull()" class="w-full bg-terminal border border-borderDark focus:border-cyan-500 rounded-lg px-2 py-1.5 text-gray-200 font-mono">
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-gray-400 mb-1">模型</label>
+                <select id="naiModel" class="w-full bg-terminal border border-borderDark focus:border-cyan-500 rounded-lg px-2 py-1.5 text-gray-200 font-mono"></select>
+              </div>
+              <div>
+                <label class="block text-gray-400 mb-1">采样器</label>
+                <select id="naiSampler" class="w-full bg-terminal border border-borderDark focus:border-cyan-500 rounded-lg px-2 py-1.5 text-gray-200 font-mono"></select>
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div>
+                <label class="block text-gray-400 mb-1">步数</label>
+                <input id="naiSteps" type="number" min="1" max="50" class="w-full bg-terminal border border-borderDark focus:border-cyan-500 rounded-lg px-2 py-1.5 text-gray-200 font-mono">
+              </div>
+              <div>
+                <label class="block text-gray-400 mb-1">引导强度</label>
+                <input id="naiScale" type="number" step="0.1" min="1" max="20" class="w-full bg-terminal border border-borderDark focus:border-cyan-500 rounded-lg px-2 py-1.5 text-gray-200 font-mono">
+              </div>
+              <div>
+                <label class="block text-gray-400 mb-1">UC 预设</label>
+                <select id="naiUcPreset" class="w-full bg-terminal border border-borderDark focus:border-cyan-500 rounded-lg px-2 py-1.5 text-gray-200 font-mono"></select>
+              </div>
+            </div>
+            <div>
+              <label class="block text-gray-400 mb-1">额外负向词（可选）</label>
+              <input id="naiNegative" placeholder="留空即可" class="w-full bg-terminal border border-borderDark focus:border-cyan-500 rounded-lg px-2 py-1.5 text-gray-200 font-mono">
+            </div>
+            <label class="flex items-center gap-2 cursor-pointer pt-1">
+              <input id="naiQuality" type="checkbox" class="accent-cyan-500">
+              <span class="text-gray-300">自动带画质词（masterpiece / best quality 等）</span>
+            </label>
+            <div class="text-[11px] text-gray-500 leading-relaxed">
+              默认竖版 832x1216；AI 写 &lt;size&gt;1216x832&lt;/size&gt; 会自动按 64 的倍数对齐，总像素上限 3145728。UC 预设：0=Heavy 1=Light 2=Human Focus 3=None。
+            </div>
+            <div id="naiAcct" class="text-[11px] font-mono text-gray-400 leading-relaxed"></div>
+            <div class="flex items-center gap-3 pt-1 flex-wrap">
+              <button type="button" onclick="naiSaveCfg()" class="px-3 py-1.5 rounded bg-emerald-900/60 border border-emerald-700 text-emerald-100 text-xs hover:bg-emerald-800/60">💾 保存 NovelAI 设置</button>
+              <button type="button" onclick="naiAutoPull()" class="px-3 py-1.5 rounded bg-cyan-900/60 border border-cyan-700 text-cyan-100 text-xs hover:bg-cyan-800/60">🔄 拉取账户信息</button>
+              <span id="naiMsg" class="text-[11px] font-mono text-gray-400"></span>
+            </div>
+          </div>
+        </div>
 
         <!-- 连接状态 -->
         <div class="bg-card border border-borderDark rounded-xl p-4 shadow-lg flex-shrink-0">
@@ -7751,6 +7845,7 @@
 
     async function comfyLoad() {
       await comfyRefresh();
+      await drawLoad();
       await comfyLoadWf();
       await comfyLoadImgs();
     }
@@ -7763,7 +7858,8 @@
       try {
         const r = await fetch('/api/comfy/status');
         const d = await r.json();
-        if (d.status !== 'ok') throw new Error(d.message || '读取失败');
+        lastDrawStatus = d;
+      if (d.status !== 'ok') throw new Error(d.message || '读取失败');
         const c = d.connection || {};
         if (c.ok) {
           badge.textContent = '已连接';
@@ -11086,6 +11182,198 @@ async function setSave() {
     if (o) { o.textContent = '保存失败：' + e.message; o.className = 'text-[11px] font-mono text-rose-400'; }
   }
 }
+    // ===== 生图端口（ComfyUI / NovelAI）=====
+    let drawBackendNow = 'comfyui';
+
+    function drawMsg(id, text, ok) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = text || '';
+      el.className = 'text-[11px] font-mono ' + (ok ? 'text-emerald-400' : 'text-amber-400');
+    }
+
+    function drawPick(v) {
+      drawBackendNow = v;
+      drawMsg('drawMsg', '已选 ' + (v === 'nai' ? 'NovelAI' : 'ComfyUI') + '，点「切换生图端口」生效', true);
+    }
+
+    async function drawLoad() {
+      try {
+        const r = await fetch('/api/draw/backend');
+        const j = await r.json();
+        if (j && j.backend) {
+          drawBackendNow = j.backend;
+          const c = document.getElementById('drawComfy');
+          const n = document.getElementById('drawNai');
+          if (c) c.checked = (j.backend === 'comfyui');
+          if (n) n.checked = (j.backend === 'nai');
+          const card = document.getElementById('naiCard');
+          if (card) card.style.display = (j.backend === 'nai') ? '' : 'none';
+        }
+      } catch (e) {}
+      comfyHide(drawBackendNow === 'nai');
+      if (drawBackendNow === 'nai') {
+        try { await comfyRefresh(); } catch (e) {}
+        await naiRefresh(true);
+      }
+      await naiLoadCfg();
+    }
+
+    async function drawSave() {
+      drawMsg('drawMsg', '切换中…', true);
+      try {
+        const r = await fetch('/api/draw/backend', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ backend: drawBackendNow })
+        });
+        const j = await r.json();
+        drawMsg('drawMsg', (j && j.status === 'ok')
+          ? ('已切换到 ' + (j.backend === 'nai' ? 'NovelAI' : 'ComfyUI'))
+          : ((j && j.message) || '切换失败'), !!(j && j.status === 'ok'));
+      } catch (e) {
+        drawMsg('drawMsg', '切换失败：' + e, false);
+      }
+      await drawLoad();
+    }
+
+    const NAI_FIELDS = ['nai_token', 'nai_base_url', 'nai_proxy', 'nai_model', 'nai_steps',
+                        'nai_scale', 'nai_sampler', 'nai_uc_preset', 'nai_negative'];
+    const NAI_DOM = { nai_token: 'naiToken', nai_base_url: 'naiBaseUrl', nai_proxy: 'naiProxy',
+                      nai_model: 'naiModel', nai_steps: 'naiSteps', nai_scale: 'naiScale',
+                      nai_sampler: 'naiSampler', nai_uc_preset: 'naiUcPreset',
+                      nai_negative: 'naiNegative' };
+
+    let naiCfgCache = {};
+    let lastDrawStatus = null;
+
+    function naiTierName(t) {
+      const m = { 0: 'Paper', 1: 'Tablet', 2: 'Scroll', 3: 'Opus' };
+      return (m[t] !== undefined) ? m[t] : ('档位 ' + t);
+    }
+
+    // 下拉项只填一次（同一批选项不重复刷，避免打断用户正在选的项）
+    function naiFillSelect(id, opts, keep) {
+      const el = document.getElementById(id);
+      if (!el || !opts || !opts.length) return;
+      const sig = opts.map(function (o) { return o[0]; }).join('|');
+      if (el.dataset.sig === sig) return;
+      el.dataset.sig = sig;
+      el.innerHTML = opts.map(function (o) {
+        return '<option value="' + o[0] + '">' + o[1] + '</option>';
+      }).join('');
+      if (keep && opts.some(function (o) { return o[0] === keep; })) el.value = keep;
+    }
+
+    // 拉取：填下拉项 + 账户档位/Anlas + 连接徽章。useCached=true 时复用 comfyRefresh 刚拿到的状态，不重复请求。
+    async function naiRefresh(useCached) {
+      const badge = document.getElementById('naiConnBadge');
+      const acct = document.getElementById('naiAcct');
+      let d = useCached ? lastDrawStatus : null;
+      if (!d) {
+        try {
+          const r = await fetch('/api/comfy/status');
+          d = await r.json();
+          lastDrawStatus = d;
+        } catch (e) {
+          if (badge) {
+            badge.textContent = '拉取失败';
+            badge.className = 'text-[10px] px-2 py-0.5 rounded border font-mono bg-rose-950 text-rose-300 border-rose-800';
+          }
+          return false;
+        }
+      }
+      if (d && d.backend === 'nai') {
+        naiFillSelect('naiModel', (d.models || []).map(function (m) { return [m.id, m.name]; }), d.model);
+        naiFillSelect('naiSampler', (d.samplers || []).map(function (s) { return [s, s]; }), '');
+        naiFillSelect('naiUcPreset', (d.uc_presets || []).map(function (u) { return [String(u.id), u.name]; }), '');
+      }
+      const conn = (d && d.connection) || {};
+      if (badge) {
+        badge.textContent = conn.ok ? '已连接' : (conn.message || '未连接');
+        badge.className = 'text-[10px] px-2 py-0.5 rounded border font-mono ' + (conn.ok
+          ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+          : 'bg-rose-950 text-rose-300 border-rose-800');
+      }
+      const a = (d && d.account) || {};
+      if (acct) {
+        acct.textContent = a.ok
+          ? ('账户档位 ' + naiTierName(a.tier) + ' · Anlas 剩余 ' + (a.anlas === undefined ? '—' : a.anlas))
+          : (a.message || '');
+      }
+      return !!(d && d.status === 'ok');
+    }
+
+    // 填完 token / 地址自动跑：先静默存盘，再拉一次
+    async function naiAutoPull() {
+      drawMsg('naiMsg', '拉取中…', true);
+      await naiSaveCfg(true);
+      const ok = await naiRefresh(false);
+      drawMsg('naiMsg', ok ? '已保存并拉取' : '已保存，但拉取失败', ok);
+    }
+
+    async function naiLoadCfg() {
+      try {
+        const r = await fetch('/api/nai/config');
+        const j = await r.json();
+        naiCfgCache = (j && j.config) || {};
+      } catch (e) {
+        naiCfgCache = {};
+      }
+      naiApplyCfg();
+    }
+
+    function naiApplyCfg() {
+      for (const k of NAI_FIELDS) {
+        const el = document.getElementById(NAI_DOM[k]);
+        if (!el) continue;
+        let v = naiCfgCache[k];
+        v = (v === undefined || v === null) ? '' : String(v);
+        if (el.tagName === 'SELECT' && v &&
+            !Array.prototype.some.call(el.options, function (o) { return o.value === v; })) {
+          el.insertAdjacentHTML('beforeend', '<option value="' + v + '">' + v + '（当前值）</option>');
+        }
+        el.value = v;
+      }
+      const q = document.getElementById('naiQuality');
+      if (q) q.checked = !!naiCfgCache.nai_quality;
+    }
+
+    // 切到 NAI 时把 ComfyUI 专属的卡片 / 行收起来（共享的「生图提示词」「手动出图」留着）
+    function comfyHide(on) {
+      [['comfyConnBadge', '.bg-card'], ['comfyServer', 'div'], ['comfyWfFile', '.bg-card']]
+        .forEach(function (t) {
+          const el = document.getElementById(t[0]);
+          if (!el) return;
+          const box = el.closest(t[1]);
+          if (box) box.style.display = on ? 'none' : '';
+        });
+    }
+
+    async function naiSaveCfg(silent) {
+      const body = {};
+      for (const k of NAI_FIELDS) {
+        const el = document.getElementById(NAI_DOM[k]);
+        if (el) body[k] = el.value;
+      }
+      const q = document.getElementById('naiQuality');
+      if (q) body.nai_quality = q.checked;
+      try {
+        const r = await fetch('/api/nai/config', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const j = await r.json();
+        if (!silent) drawMsg('naiMsg', (j && j.status === 'ok') ? '已保存' : ((j && j.message) || '保存失败'),
+                             !!(j && j.status === 'ok'));
+      } catch (e) {
+        drawMsg('naiMsg', '保存失败：' + e, false);
+      }
+      await naiLoadCfg();
+    }
+
+    try { drawLoad(); } catch (e) {}
+
 // ===== 协议端（NapCat / SnowLuma 空协议模式）=====
 let currentProtocol = 'napcat';
 // ---- SnowLuma：它的登录/注入只能在它自己的 WebUI 里做，这里给入口和状态 ----

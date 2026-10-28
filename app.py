@@ -4362,8 +4362,16 @@ def _upd_tags_url(plat, repo, host):
 
 
 def _upd_ver(s):
-    nums = re.findall(r"\d+", str(s or ""))
-    return tuple(int(x) for x in nums[:3]) or (0,)
+    """版本串 -> 可比较元组。v1.0.0-r3 / 1.0.0r2 这类修订后缀的 rN 也要参与比较。"""
+    t = str(s or "").strip().lstrip("vV")
+    m = re.match(r"(\d+(?:\.\d+)*)", t)
+    nums = [int(x) for x in m.group(1).split(".")] if m else []
+    tail = t[m.end():] if m else t
+    mr = re.search(r"r(\d+)", tail, re.I)
+    rev = int(mr.group(1)) if mr else 0
+    while len(nums) < 3:
+        nums.append(0)
+    return tuple(nums[:3]) + (rev,)
 
 
 @app.get("/api/update/check")

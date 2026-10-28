@@ -5524,6 +5524,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ entries: worldBookEntries })
         });
+        const data = await res.json();
         if (data.status === 'need_confirm') {
           if (quiet) {
             appendLog('WARN', '⚠ 世界书已经变成 0 条，自动保存已拦下；确实要清空就点「保存」按钮确认。');
@@ -5544,7 +5545,6 @@
           updateWorldBookStats();
           return;
         }
-        const data = await res.json();
         if (res.ok) {
           if (!quiet) appendLog('SUCCESS', `世界书设定已成功保存并热重载（当前共 ${worldBookEntries.length} 条）`);
           updateWorldBookStats();
@@ -7879,7 +7879,8 @@
         return;
       }
       box.innerHTML = '正向提示词节点 <span class="text-cyan-300">' + escapeHtml(String(w.prompt_node || '自动')) +
-        '</span> · 出图节点 <span class="text-cyan-300">' + escapeHtml(String(w.output_node || '自动')) + '</span>';
+        '</span> · 出图节点 <span class="text-cyan-300">' + escapeHtml(String(w.output_node || '自动')) + '</span>' +
+        ' · LoRA节点 <span class="text-cyan-300">' + escapeHtml(String(w.lora_node || '自动插入')) + '</span>';
     }
 
     async function comfyPickWf() {

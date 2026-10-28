@@ -4081,7 +4081,7 @@
               </select>
               <button type="button" onclick="wbSaveProfile()" title="把当前世界书存进选中的配置档"
                       class="px-2 py-0.5 rounded bg-emerald-900/60 border border-emerald-700 text-emerald-100 text-[11px] hover:bg-emerald-800/60">💾 保存</button>
-              <button type="button" onclick="wbNewProfile()" title="用当前世界书新建一个配置档"
+              <button type="button" onclick="wbNewProfile()" title="新建一个空的配置档（不复制当前内容）"
                       class="px-2 py-0.5 rounded bg-blue-950/60 border border-blue-800 text-blue-200 text-[11px] hover:bg-blue-900/60">➕ 新建</button>
               <button type="button" onclick="wbRenameProfile()" title="给选中的配置档改名"
                       class="px-2 py-0.5 rounded bg-gray-900 border border-gray-700 text-gray-300 text-[11px] hover:bg-gray-800">✏️ 改名</button>
@@ -8710,20 +8710,20 @@
     }
 
     async function wbNewProfile() {
-      const name = (prompt(`新建一个 ${wbScopeLabel(wbScope)} 的世界书配置档，名字：`) || '').trim();
+      const name = (prompt(`新建一个空的 ${wbScopeLabel(wbScope)} 世界书配置档，名字：`) || '').trim();
       if (!name) return;
       if ((WB_PROFILES || []).some(p => p.name === name)) {
-        if (!confirm('已经有叫「' + name + '」的配置档了。\n要覆盖它吗？')) return;
+        if (!confirm('已经有叫「' + name + '」的配置档了。\n新建会把它覆盖成空档，确定吗？')) return;
       }
       try {
         const r = await fetch('/api/world_book/profiles', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ scope: wbScope || 'main', name: name })
+          body: JSON.stringify({ scope: wbScope || 'main', name: name, empty: true })
         });
         const d = await r.json();
         if (d.status !== 'ok') throw new Error(d.message || '新建失败');
         await wbLoadProfiles(name);
-        wbProfileMsg('已新建：' + name, true);
+        wbProfileMsg('已新建空配置档：' + name + '（点「切换」进去写内容）', true);
       } catch (e) { wbProfileMsg(e.message, false); }
     }
 

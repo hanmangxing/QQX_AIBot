@@ -1296,12 +1296,15 @@ async def wb_profiles_list(scope: str = "main"):
 
 @app.post("/api/world_book/profiles")
 async def wb_profile_save(payload: Dict[str, Any]):
-    """把该数据源当前的世界书存成具名配置档（同名覆盖）。"""
+    """把该数据源当前的世界书存成具名配置档（同名覆盖）。
+
+    带 empty=true 时建一个空档（「新建」用），否则存当前世界书（「保存」用）。
+    """
     sc = _wb_scope_norm(payload.get("scope"))
     name = str(payload.get("name") or "").strip()
     if not name:
         return {"status": "error", "message": "配置档名字不能为空"}
-    entries = _wb_load_for(sc)
+    entries = [] if payload.get("empty") else _wb_load_for(sc)
     rows = [r for r in _wb_profile_rows(sc) if str(r.get("name")) != name]
     rows.append({"name": name, "entries": entries})
     _wb_profile_store()[sc] = rows
